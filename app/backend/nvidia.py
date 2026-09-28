@@ -112,7 +112,8 @@ class NvidiaController:
 
         return gpus[0]
 
-    def get_power_limits(self) -> dict[str, Any]:
+    def get_default_power(self) -> dict[str, Any]:
+        """Read only the NVIDIA driver's default GPU power value."""
         if not self.command:
             return {
                 "available": False,
@@ -121,8 +122,7 @@ class NvidiaController:
 
         result = self._run(
             [
-                "--query-gpu=name,power.default_limit,"
-                "power.min_limit,power.max_limit",
+                "--query-gpu=name,power.default_limit",
                 "--format=csv,noheader,nounits",
             ]
         )
@@ -130,36 +130,32 @@ class NvidiaController:
         if result is None or result.returncode != 0:
             return {
                 "available": False,
-                "reason": "NVIDIA power-limit information is unavailable.",
+                "reason": "NVIDIA default power information is unavailable.",
             }
 
         values = [item.strip() for item in result.stdout.strip().split(",")]
-        if len(values) < 4:
+        if len(values) < 2:
             return {
                 "available": False,
-                "reason": "Unexpected NVIDIA power-limit output.",
+                "reason": "Unexpected NVIDIA default power output.",
             }
 
         default = self._float(values[1])
-        minimum = self._float(values[2])
-        maximum = self._float(values[3])
-
-        if default is None or minimum is None or maximum is None:
+        if default is None:
             return {
                 "available": False,
-                "reason": "NVIDIA did not expose a writable power-limit range.",
-                "default": default,
-                "minimum": minimum,
-                "maximum": maximum,
+                "reason": "NVIDIA did not report a default power value.",
             }
 
         return {
             "available": True,
             "name": values[0],
             "default": default,
-            "minimum": minimum,
-            "maximum": maximum,
         }
+
+    def get_power_limits(self) -> dict[str, Any]:
+        """Compatibility read-only query; user controls are not exposed."""
+        return self.get_default_power()
 
 
     def prime_mode(self) -> str | None:
