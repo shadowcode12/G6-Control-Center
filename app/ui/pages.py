@@ -23,6 +23,7 @@ from PySide6.QtWidgets import (
 )
 
 from app.backend.battery import BatteryController
+from app.backend.cpu import CpuController
 from app.backend.fans import FanController
 from app.backend.graphics import GraphicsController
 from app.backend.keyboard import KeyboardController
@@ -421,10 +422,7 @@ class CPUPage(QWidget):
     def refresh(self) -> None:
         info = self.controller.telemetry()
 
-        usage = __import__(
-            "app.backend.system_info",
-            fromlist=["get_cpu_usage"],
-        ).get_cpu_usage()
+        usage = get_cpu_usage()
 
         self.usage_card.value_label.setText(
             f"{usage:.0f}%"
