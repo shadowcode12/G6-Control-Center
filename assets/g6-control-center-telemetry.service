@@ -5,16 +5,24 @@ ConditionPathExists=/sys/kernel/debug
 
 [Service]
 Type=simple
-ExecStartPre=/sbin/modprobe ec_sys
+
+# ec_sys is a kernel module; loading an already-loaded module is harmless.
+ExecStartPre=/usr/sbin/modprobe ec_sys
 ExecStart=/opt/g6-control-center/venv/bin/python -m app.services.telemetry_daemon
+
 Restart=on-failure
 RestartSec=2
+
 User=root
 Group=root
-ProtectSystem=full
+
+# systemd creates /run/g6-control-center before starting the service.
+RuntimeDirectory=g6-control-center
+RuntimeDirectoryMode=0755
+
+# The current native stage only reads EC telemetry and writes one JSON snapshot.
 ProtectHome=true
 PrivateTmp=true
-ReadWritePaths=/run/g6-control-center
 
 [Install]
 WantedBy=multi-user.target
