@@ -1,0 +1,20 @@
+[Unit]
+Description=G6 Control Center native hardware telemetry
+After=local-fs.target systemd-modules-load.service
+ConditionPathExists=/sys/kernel/debug
+
+[Service]
+Type=simple
+ExecStartPre=/sbin/modprobe ec_sys
+ExecStart=/opt/g6-control-center/venv/bin/python -m app.services.telemetry_daemon
+Restart=on-failure
+RestartSec=2
+User=root
+Group=root
+ProtectSystem=full
+ProtectHome=true
+PrivateTmp=true
+ReadWritePaths=/run/g6-control-center
+
+[Install]
+WantedBy=multi-user.target
