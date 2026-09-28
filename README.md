@@ -24,7 +24,7 @@ For development, create a Python 3.11+ virtual environment and run the project d
 
 For a local desktop-style install, run:
 
-    sudo ./packaging/install.sh
+    sudo bash packaging/install.sh
 
 This installs the application under /opt/g6-control-center, a trusted root-owned privileged helper, a desktop entry, and a g6-control-center launcher.
 
