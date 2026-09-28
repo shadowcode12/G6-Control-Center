@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=G6 Control Center
+Comment=Performance and hardware controls for Gigabyte G6 laptops
+Exec=g6-control-center
+Icon=g6-control-center
+Terminal=false
+Categories=Settings;System;HardwareSettings;
+StartupNotify=true
