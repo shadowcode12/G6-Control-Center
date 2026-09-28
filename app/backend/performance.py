@@ -142,9 +142,36 @@ class PerformanceController:
             returncode=result.returncode,
         )
 
+    def turbo_enabled(self) -> bool | None:
+        no_turbo = self._read(
+            "/sys/devices/system/cpu/intel_pstate/no_turbo"
+        )
+        if no_turbo is not None:
+            return no_turbo == "0"
+
+        boost = self._read(
+            "/sys/devices/system/cpu/cpufreq/boost"
+        )
+        if boost is not None:
+            return boost == "1"
+
+        return None
+
+    def set_turbo_enabled(self, enabled: bool) -> CommandResult:
+        result = run_privileged(
+            ["turbo", "on" if enabled else "off"]
+        )
+        return CommandResult(
+            ok=result.ok,
+            stdout=result.stdout,
+            stderr=result.stderr,
+            returncode=result.returncode,
+        )
+
     def state(self) -> dict:
         return {
             "profile": self.current_profile(),
             "driver": self.cpu_driver(),
             "epp": self.energy_performance_preference(),
+            "turbo": self.turbo_enabled(),
         }
