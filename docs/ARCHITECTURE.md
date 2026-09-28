@@ -20,7 +20,7 @@ The native telemetry service reads the verified G6 KF EC registers for CPU/GPU t
 
 ## Battery
 
-Battery telemetry is read from `/sys/class/power_supply/BAT*`. When the active driver exposes the standard start/end threshold files, the UI provides Full Charge, Locked at 80% and Custom modes. Linux defines `charge_type=Custom` as the charging mode that uses `charge_control_*` threshold properties. Clevo-family FlexiCharger support on Linux is dependent on a compatible `clevo_acpi` driver. citeturn592304search0turn318739search5
+Battery telemetry is read from `/sys/class/power_supply/BAT*`. When the active driver exposes the standard start/end threshold files, the UI provides Full Charge, Locked at 80% and Custom modes. Linux defines `charge_type=Custom` as the charging mode that uses `charge_control_*` threshold properties. Clevo-family FlexiCharger support on Linux is dependent on a compatible `clevo_acpi` driver.
 
 ## CPU
 
