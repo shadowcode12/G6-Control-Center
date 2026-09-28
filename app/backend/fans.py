@@ -108,6 +108,9 @@ class FanController:
 
         if native is not None:
             if native.get("available"):
+                mode_path = self.telemetry_path.with_name("fan_mode")
+                mode = self._read_text(mode_path) or "automatic"
+                native["mode"] = mode
                 return native
             # A fresh native error is more useful than silently hiding it.
             if native.get("timestamp"):
@@ -115,6 +118,7 @@ class FanController:
 
         hwmon = self._read_hwmon()
         if hwmon is not None:
+            hwmon["mode"] = "automatic"
             return hwmon
 
         return {
