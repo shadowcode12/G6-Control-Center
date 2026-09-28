@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from pathlib import Path
 import os
 import shutil
+import stat
 import subprocess
 from typing import Sequence
 
@@ -16,33 +17,63 @@ class PrivilegedResult:
     returncode: int = 0
 
 
+def _safe_helper(path: Path | None) -> Path | None:
+    if path is None or not path.exists():
+        return None
+
+    try:
+        info = path.stat()
+    except OSError:
+        return None
+
+    # The helper must be root-owned and not writable by group/other users.
+    if info.st_uid != 0:
+        return None
+
+    if info.st_mode & (stat.S_IWGRP | stat.S_IWOTH):
+        return None
+
+    return path
+
+
 def _helper_path() -> Path | None:
+    installed = _safe_helper(
+        Path("/usr/lib/g6-control-center/privileged_helper.py")
+    )
+    if installed:
+        return installed
+
+    # Explicit developer override is accepted only when the caller points to
+    # a root-owned, non-world-writable helper.
     explicit = os.environ.get("G6CC_HELPER")
     if explicit:
-        candidate = Path(explicit)
-        if candidate.exists():
-            return candidate
-
-    repo_helper = Path(__file__).resolve().parents[1] / "services" / "privileged_helper.py"
-    if repo_helper.exists():
-        return repo_helper
-
-    installed = Path("/usr/lib/g6-control-center/privileged_helper.py")
-    if installed.exists():
-        return installed
+        return _safe_helper(Path(explicit))
 
     return None
 
 
-def run_privileged(args: Sequence[str], timeout: float = 15) -> PrivilegedResult:
+def run_privileged(
+    args: Sequence[str],
+    timeout: float = 15,
+) -> PrivilegedResult:
     pkexec = shutil.which("pkexec")
     python = shutil.which("python3") or "/usr/bin/python3"
     helper = _helper_path()
 
-    if not pkexec or helper is None:
+    if not pkexec:
         return PrivilegedResult(
             ok=False,
-            stderr="pkexec or the privileged helper is not installed.",
+            stderr="PolicyKit (pkexec) is not installed.",
+            returncode=127,
+        )
+
+    if helper is None:
+        return PrivilegedResult(
+            ok=False,
+            stderr=(
+                "The root-owned helper is not installed. "
+                "Run packaging/install.sh first."
+            ),
             returncode=127,
         )
 
