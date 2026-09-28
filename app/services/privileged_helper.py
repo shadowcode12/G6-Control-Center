@@ -66,15 +66,19 @@ def battery_threshold(value: int) -> None:
     if not 50 <= value <= 100:
         raise ValueError("Battery threshold must be between 50 and 100.")
 
-    paths = glob.glob(
-        "/sys/class/power_supply/BAT*/charge_control_end_threshold"
-    )
+    paths: list[str] = []
+    for pattern in (
+        "/sys/class/power_supply/BAT*/charge_control_end_threshold",
+        "/sys/class/power_supply/BAT*/charge_stop_threshold",
+    ):
+        paths.extend(glob.glob(pattern))
+
+    paths = sorted(set(paths))
     if not paths:
         raise RuntimeError("Battery charge threshold is not supported.")
 
     for path in paths:
         write_text(path, str(value))
-
 
 def rapl_power_limit(constraint: int, watts: float) -> None:
     if constraint not in (0, 1):
