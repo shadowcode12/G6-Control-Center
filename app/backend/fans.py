@@ -130,3 +130,18 @@ class FanController:
     @property
     def available(self) -> bool:
         return bool(self.status().get("available"))
+
+
+    def set_mode(self, mode: str) -> tuple[bool, str]:
+        """Set a global fan profile; both physical fans are changed together."""
+        normalized = mode.strip().lower()
+        if normalized not in {"quiet", "balanced", "high", "automatic"}:
+            return False, "Unsupported fan mode."
+
+        from app.backend.privileges import run_privileged
+
+        result = run_privileged(
+            ["fan-mode", normalized],
+            timeout=10,
+        )
+        return result.ok, result.stderr or result.stdout
