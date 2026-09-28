@@ -233,7 +233,7 @@ class PerformancePage(QWidget):
 
         title, subtitle = page_header(
             "Performance",
-            "Linux-native power management and CPU controls",
+            "System profiles and simple CPU energy preference",
         )
         layout.addWidget(title)
         layout.addWidget(subtitle)
@@ -261,46 +261,52 @@ class PerformancePage(QWidget):
 
         layout.addWidget(profile_group)
 
-        cpu_group = QGroupBox("CPU Controls")
+        cpu_group = QGroupBox("CPU Energy Preference")
         cpu_form = QFormLayout(cpu_group)
 
         self.driver_label = QLabel("--")
         self.epp_combo = QComboBox()
-        self.epp_combo.addItems(self.controller.EPP_OPTIONS)
+        for key in self.controller.EPP_OPTIONS:
+            self.epp_combo.addItem(
+                self.controller.EPP_LABELS[key],
+                key,
+            )
 
-        self.epp_apply = QPushButton("Apply EPP")
+        self.epp_apply = QPushButton("Apply")
         self.epp_apply.clicked.connect(
-            lambda: self.set_epp(self.epp_combo.currentText())
+            lambda: self.set_epp(
+                self.epp_combo.currentData()
+            )
         )
-
-        self.turbo_button = QPushButton("Toggle Turbo")
-        self.turbo_button.clicked.connect(self.toggle_turbo)
-
-        self.turbo_label = QLabel("--")
 
         cpu_form.addRow("CPU driver:", self.driver_label)
         epp_row = QHBoxLayout()
         epp_row.addWidget(self.epp_combo)
         epp_row.addWidget(self.epp_apply)
-        cpu_form.addRow("Energy preference:", epp_row)
-        cpu_form.addRow("Turbo status:", self.turbo_label)
-        cpu_form.addRow("", self.turbo_button)
+        cpu_form.addRow("Preference:", epp_row)
+
+        note = QLabel(
+            "Low = energy saving • Mid = balanced • High = performance. "
+            "CPU power-limit and voltage controls are intentionally not exposed "
+            "because the G6 KF firmware keeps those controls locked."
+        )
+        note.setObjectName("info")
+        note.setWordWrap(True)
+        cpu_form.addRow("", note)
 
         layout.addWidget(cpu_group)
 
-        rapl_group = QGroupBox("CPU Power Limits (RAPL)")
-        self.rapl_layout = QGridLayout(rapl_group)
-        self.rapl_message = QLabel("Detecting Intel RAPL power limits...")
-        self.rapl_layout.addWidget(self.rapl_message, 0, 0, 1, 4)
-        layout.addWidget(rapl_group)
-
         self.status = QLabel("Ready")
         self.status.setObjectName("info")
+        self.status.setWordWrap(True)
         layout.addWidget(self.status)
 
         self.refresh_button = QPushButton("Refresh")
         self.refresh_button.clicked.connect(self.refresh_state)
-        layout.addWidget(self.refresh_button, alignment=Qt.AlignmentFlag.AlignLeft)
+        layout.addWidget(
+            self.refresh_button,
+            alignment=Qt.AlignmentFlag.AlignLeft,
+        )
 
         layout.addStretch()
         self.refresh_state()
@@ -308,131 +314,58 @@ class PerformancePage(QWidget):
     def select_profile(self, profile: str) -> None:
         result = self.controller.set_profile(profile)
         if not result.ok:
-            show_error(self, result.stderr or "Unable to change profile.")
-            return
-        self.status.setText(f"Profile changed to {profile.title()}.")
-        self.refresh_state()
-
-    def set_epp(self, value: str) -> None:
-        if not value or not self.controller.energy_performance_preference():
-            return
-        result = self.controller.set_epp(value)
-        if not result.ok:
-            # Combo box signals during startup should not create popups.
-            if self.isVisible():
-                show_error(self, result.stderr or "Unable to set EPP.")
-        else:
-            self.status.setText(f"Energy preference set to {value}.")
-            self.refresh_state()
-
-    def toggle_turbo(self) -> None:
-        current = self.controller.turbo_enabled()
-        if current is None:
-            show_error(self, "Turbo control is not exposed by this kernel.")
-            return
-
-        result = self.controller.set_turbo_enabled(not current)
-        if not result.ok:
-            show_error(self, result.stderr or "Unable to change Turbo.")
+            show_error(
+                self,
+                result.stderr or "Unable to change profile.",
+            )
             return
 
         self.status.setText(
-            f"Turbo Boost {'enabled' if not current else 'disabled'}."
+            f"Profile changed to {profile.title()}."
+        )
+        self.refresh_state()
+
+    def set_epp(self, value: str | None) -> None:
+        if not value:
+            return
+
+        result = self.controller.set_epp(value)
+        if not result.ok:
+            show_error(
+                self,
+                result.stderr or "Unable to set energy preference.",
+            )
+            return
+
+        self.status.setText(
+            f"Energy preference set to "
+            f"{self.controller.EPP_LABELS.get(value, value.title())}."
         )
         self.refresh_state()
 
     def refresh_state(self) -> None:
         state = self.controller.state()
 
-        self.driver_label.setText(state["driver"] or "Unavailable")
-        self.turbo_label.setText(
-            "ON" if state["turbo"] is True
-            else "OFF" if state["turbo"] is False
-            else "Unavailable"
+        self.driver_label.setText(
+            state["driver"] or "Unavailable"
         )
 
         epp = state["epp"]
         if epp:
-            block = self.epp_combo.blockSignals(True)
-            index = self.epp_combo.findText(epp)
+            blocked = self.epp_combo.blockSignals(True)
+            index = self.epp_combo.findData(epp)
             if index >= 0:
                 self.epp_combo.setCurrentIndex(index)
-            self.epp_combo.blockSignals(block)
+            self.epp_combo.blockSignals(blocked)
 
-        available = set(self.controller.available_profiles())
+        available = set(
+            self.controller.available_profiles()
+        )
         for key, button in self.profile_buttons.items():
             button.setEnabled(
-                self.controller.PROFILE_ALIASES[key] in available
+                self.controller.PROFILE_ALIASES[key]
+                in available
             )
-
-        self.render_rapl(state["rapl"])
-
-    def render_rapl(self, constraints) -> None:
-        while self.rapl_layout.count():
-            item = self.rapl_layout.takeAt(0)
-            widget = item.widget()
-            if widget:
-                widget.deleteLater()
-
-        if not constraints:
-            message = QLabel(
-                "Intel RAPL power limits are not exposed on this kernel."
-            )
-            self.rapl_layout.addWidget(message, 0, 0)
-            return
-
-        headers = ["Limit", "Current", "Range", "Apply"]
-        for column, header in enumerate(headers):
-            self.rapl_layout.addWidget(QLabel(header), 0, column)
-
-        for row, constraint in enumerate(constraints, start=1):
-            name = QLabel(
-                "PL1" if constraint.index == 0 else "PL2"
-            )
-            current = QLabel(f"{constraint.current_watts:.1f} W")
-
-            spin = QDoubleSpinBox()
-            spin.setDecimals(1)
-            spin.setSingleStep(1.0)
-            spin.setSuffix(" W")
-            spin.setValue(constraint.current_watts)
-
-            if constraint.min_watts is not None:
-                spin.setMinimum(constraint.min_watts)
-            else:
-                spin.setMinimum(1.0)
-
-            if constraint.max_watts is not None:
-                spin.setMaximum(constraint.max_watts)
-            else:
-                spin.setMaximum(200.0)
-
-            apply_button = QPushButton("Apply")
-            apply_button.clicked.connect(
-                lambda _=False, idx=constraint.index, box=spin:
-                self.apply_rapl(idx, box.value())
-            )
-
-            range_text = (
-                f"{constraint.min_watts:.1f}-{constraint.max_watts:.1f} W"
-                if constraint.min_watts is not None
-                and constraint.max_watts is not None
-                else "Kernel range unavailable"
-            )
-
-            self.rapl_layout.addWidget(name, row, 0)
-            self.rapl_layout.addWidget(current, row, 1)
-            self.rapl_layout.addWidget(QLabel(range_text), row, 2)
-            self.rapl_layout.addWidget(apply_button, row, 3)
-
-    def apply_rapl(self, index: int, watts: float) -> None:
-        result = self.controller.set_rapl_limit(index, watts)
-        if not result.ok:
-            show_error(self, result.stderr or "Unable to set CPU power limit.")
-            return
-        self.status.setText(f"Power limit {index} set to {watts:.1f} W.")
-        self.refresh_state()
-
 
 class GPUPage(QWidget):
     def __init__(self, controller: GraphicsController):
@@ -445,7 +378,7 @@ class GPUPage(QWidget):
 
         title, subtitle = page_header(
             "GPU",
-            "Real-time Intel/NVIDIA telemetry and supported controls",
+            "Real-time Intel/NVIDIA telemetry and device information",
         )
         layout.addWidget(title)
         layout.addWidget(subtitle)
@@ -464,36 +397,45 @@ class GPUPage(QWidget):
         cards.addWidget(self.vram_card, 1, 0)
         cards.addWidget(self.clock_card, 1, 1)
         cards.addWidget(self.mode_card, 1, 2)
-
         layout.addLayout(cards)
 
-        power_group = QGroupBox("GPU Power Limit")
-        power_form = QFormLayout(power_group)
+        spec_group = QGroupBox("GPU Power Specification")
+        spec_form = QFormLayout(spec_group)
 
-        self.power_spin = QDoubleSpinBox()
-        self.power_spin.setDecimals(1)
-        self.power_spin.setSuffix(" W")
-        self.power_spin.setEnabled(False)
+        self.tgp_label = QLabel("--")
+        self.default_power_label = QLabel("--")
 
-        self.default_power = QLabel("--")
-        power_form.addRow("Default:", self.default_power)
-        power_form.addRow("Requested:", self.power_spin)
+        spec_form.addRow("Default TGP:", self.tgp_label)
+        spec_form.addRow(
+            "Driver default power:",
+            self.default_power_label,
+        )
 
-        self.power_apply = QPushButton("Apply Power Limit")
-        self.power_apply.clicked.connect(self.apply_power_limit)
-        self.power_apply.setEnabled(False)
-        power_form.addRow("", self.power_apply)
+        note = QLabel(
+            "Power-limit, overclocking and undervolting controls are intentionally "
+            "not exposed. The G6 KF firmware keeps these controls locked; the app "
+            "only reports the driver's default power specification."
+        )
+        note.setObjectName("info")
+        note.setWordWrap(True)
+        spec_form.addRow("", note)
 
-        layout.addWidget(power_group)
+        layout.addWidget(spec_group)
 
         prime_group = QGroupBox("Graphics Mode")
         prime_layout = QHBoxLayout(prime_group)
 
         self.prime_combo = QComboBox()
-        self.prime_combo.addItems(["intel", "on-demand", "nvidia"])
+        self.prime_combo.addItems(
+            ["intel", "on-demand", "nvidia"]
+        )
 
-        self.prime_apply = QPushButton("Apply (reboot required)")
-        self.prime_apply.clicked.connect(self.apply_prime_mode)
+        self.prime_apply = QPushButton(
+            "Apply (reboot required)"
+        )
+        self.prime_apply.clicked.connect(
+            self.apply_prime_mode
+        )
 
         prime_layout.addWidget(QLabel("PRIME:"))
         prime_layout.addWidget(self.prime_combo)
@@ -514,7 +456,10 @@ class GPUPage(QWidget):
         self.refresh()
 
     @staticmethod
-    def _text(value: object, suffix: str = "") -> str:
+    def _value(
+        value: object,
+        suffix: str = "",
+    ) -> str:
         if isinstance(value, (int, float)):
             return f"{value:.1f}{suffix}"
         return "N/A"
@@ -522,7 +467,6 @@ class GPUPage(QWidget):
     def refresh(self) -> None:
         snapshot = self.controller.snapshot()
         gpu = snapshot.get("selected") or {}
-        limits = self.controller.get_power_limits()
         mode = snapshot.get("prime")
 
         if not gpu.get("available"):
@@ -531,31 +475,36 @@ class GPUPage(QWidget):
             self.power_card.value_label.setText("--")
             self.vram_card.value_label.setText("--")
             self.clock_card.value_label.setText("--")
-            self.mode_card.value_label.setText(mode or "N/A")
-            reasons = []
-            for key in ("nvidia", "intel"):
-                info = snapshot.get(key) or {}
-                if not info.get("available") and info.get("reason"):
-                    reasons.append(str(info["reason"]))
+            self.mode_card.value_label.setText(
+                mode or "N/A"
+            )
+            self.tgp_label.setText("N/A")
+            self.default_power_label.setText("N/A")
+
             self.status.setText(
                 "No live GPU telemetry source is available."
-                + (f" {' '.join(reasons)}" if reasons else "")
             )
-            self.power_apply.setEnabled(False)
         else:
+            vendor = str(
+                gpu.get("vendor", "gpu")
+            ).upper()
+
             self.temp_card.value_label.setText(
-                self._text(gpu.get("temperature"), "°C")
+                self._value(gpu.get("temperature"), "°C")
             )
             self.usage_card.value_label.setText(
-                self._text(gpu.get("usage"), "%")
+                self._value(gpu.get("usage"), "%")
             )
             self.power_card.value_label.setText(
-                self._text(gpu.get("power"), " W")
+                self._value(gpu.get("power"), " W")
             )
 
             used = gpu.get("memory_used")
             total = gpu.get("memory_total")
-            if isinstance(used, (int, float)) and isinstance(total, (int, float)):
+            if (
+                isinstance(used, (int, float))
+                and isinstance(total, (int, float))
+            ):
                 self.vram_card.value_label.setText(
                     f"{used:.0f} / {total:.0f} MB"
                 )
@@ -569,35 +518,30 @@ class GPUPage(QWidget):
                 else "N/A"
             )
 
-            vendor = str(gpu.get("vendor", "gpu")).upper()
-            self.mode_card.value_label.setText(mode or "N/A")
-            self.status.setText(
-                f"{gpu.get('name', 'GPU')} detected • {vendor} telemetry"
+            self.mode_card.value_label.setText(
+                mode or "N/A"
             )
 
-            if vendor == "NVIDIA" and limits.get("available"):
-                minimum = float(limits["minimum"])
-                maximum = float(limits["maximum"])
-                default = float(limits["default"])
-                current = gpu.get("power_limit")
-
-                self.power_spin.setMinimum(minimum)
-                self.power_spin.setMaximum(maximum)
-                self.power_spin.setValue(
-                    float(current)
-                    if isinstance(current, (int, float))
-                    else default
+            if vendor == "NVIDIA":
+                defaults = self.controller.get_default_power()
+                default = defaults.get("default")
+                text = (
+                    f"{default:.0f} W"
+                    if isinstance(default, (int, float))
+                    else "N/A"
                 )
-                self.power_spin.setEnabled(True)
-                self.power_apply.setEnabled(True)
-                self.default_power.setText(f"{default:.1f} W")
+                self.tgp_label.setText(text)
+                self.default_power_label.setText(text)
             else:
-                self.power_spin.setEnabled(False)
-                self.power_apply.setEnabled(False)
-                if vendor == "NVIDIA":
-                    self.default_power.setText("Unavailable")
-                else:
-                    self.default_power.setText("NVIDIA only")
+                self.tgp_label.setText("N/A")
+                self.default_power_label.setText(
+                    "Intel telemetry"
+                )
+
+            self.status.setText(
+                f"{gpu.get('name', 'GPU')} detected • "
+                f"{vendor} telemetry • live"
+            )
 
         if mode:
             blocked = self.prime_combo.blockSignals(True)
@@ -605,17 +549,6 @@ class GPUPage(QWidget):
             if index >= 0:
                 self.prime_combo.setCurrentIndex(index)
             self.prime_combo.blockSignals(blocked)
-
-    def apply_power_limit(self) -> None:
-        watts = self.power_spin.value()
-        ok, message = self.controller.set_power_limit(watts)
-        if not ok:
-            show_error(self, message or "Unable to set GPU power limit.")
-            return
-        self.status.setText(
-            f"GPU power limit requested: {watts:.1f} W."
-        )
-        self.refresh()
 
     def apply_prime_mode(self) -> None:
         mode = self.prime_combo.currentText()
@@ -630,13 +563,16 @@ class GPUPage(QWidget):
 
         ok, message = self.controller.set_prime_mode(mode)
         if not ok:
-            show_error(self, message or "Unable to change PRIME mode.")
+            show_error(
+                self,
+                message or "Unable to change PRIME mode.",
+            )
             return
 
         self.status.setText(
-            f"PRIME mode set to {mode}. Reboot Ubuntu to activate it."
+            f"PRIME mode set to {mode}. "
+            "Reboot Ubuntu to activate it."
         )
-
 
 class FansPage(QWidget):
     def __init__(self, controller: FanController):
@@ -912,7 +848,7 @@ class BatteryPage(QWidget):
 
         title, subtitle = page_header(
             "Battery",
-            "Live battery, charging and charge-limit status",
+            "Live battery, charging and FlexiCharger-style limits",
         )
         layout.addWidget(title)
         layout.addWidget(subtitle)
@@ -920,7 +856,7 @@ class BatteryPage(QWidget):
         self.capacity_card = metric_card("CHARGE", "--", "Current")
         self.health_card = metric_card("HEALTH", "--", "Full / design")
         self.power_card = metric_card("POWER", "--", "Battery draw")
-        self.limit_card = metric_card("LIMIT", "--", "Charge limit")
+        self.limit_card = metric_card("LIMIT", "--", "Stop charging")
 
         cards = QGridLayout()
         cards.addWidget(self.capacity_card, 0, 0)
@@ -929,27 +865,70 @@ class BatteryPage(QWidget):
         cards.addWidget(self.limit_card, 1, 0)
         layout.addLayout(cards)
 
-        group = QGroupBox("Charge Limit")
+        group = QGroupBox("Charging Limit")
         form = QFormLayout(group)
 
-        self.limit_combo = QComboBox()
-        for value in (60, 70, 80, 85, 90, 95, 100):
-            self.limit_combo.addItem(f"{value}%")
+        self.mode_combo = QComboBox()
+        self.mode_combo.addItems(
+            [
+                "Full Charge",
+                "Locked at 80%",
+                "Custom",
+            ]
+        )
+        self.mode_combo.currentTextChanged.connect(
+            self._update_custom_visibility
+        )
 
-        self.apply_button = QPushButton("Apply Charge Limit")
-        self.apply_button.clicked.connect(self.apply_limit)
+        self.start_combo = QComboBox()
+        self.start_combo.addItems(
+            [f"{value}%" for value in BatteryController.CLEVO_START_VALUES]
+        )
 
-        form.addRow("Limit:", self.limit_combo)
+        self.stop_combo = QComboBox()
+        self.stop_combo.addItems(
+            [f"{value}%" for value in BatteryController.CLEVO_END_VALUES]
+        )
+
+        self.apply_button = QPushButton("Apply Charging Mode")
+        self.apply_button.clicked.connect(self.apply_mode)
+
+        form.addRow("Mode:", self.mode_combo)
+
+        self.start_label = QLabel("Start charging below:")
+        self.stop_label = QLabel("Stop charging at:")
+
+        form.addRow(
+            self.start_label,
+            self.start_combo,
+        )
+        form.addRow(
+            self.stop_label,
+            self.stop_combo,
+        )
         form.addRow("", self.apply_button)
+
+        note = QLabel(
+            "Full Charge = 100%. Locked at 80% uses a 70% start / 80% stop "
+            "cycle. Custom mode exposes the supported FlexiCharger-style "
+            "start/stop thresholds. Custom thresholds are only enabled when "
+            "Linux exposes both writable charging threshold interfaces."
+        )
+        note.setObjectName("info")
+        note.setWordWrap(True)
+        form.addRow("", note)
+
         layout.addWidget(group)
 
-        status_group = QGroupBox("Battery Details")
-        status_layout = QVBoxLayout(status_group)
+        details_group = QGroupBox("Battery Details")
+        details_layout = QVBoxLayout(details_group)
+
         self.details = QTextEdit()
         self.details.setReadOnly(True)
         self.details.setMinimumHeight(150)
-        status_layout.addWidget(self.details)
-        layout.addWidget(status_group)
+        details_layout.addWidget(self.details)
+
+        layout.addWidget(details_group)
 
         self.status = QLabel("Reading battery...")
         self.status.setObjectName("info")
@@ -963,13 +942,24 @@ class BatteryPage(QWidget):
         self.timer.start(1000)
         self.refresh()
 
+    def _update_custom_visibility(self, mode: str) -> None:
+        custom = mode == "Custom"
+        self.start_label.setVisible(custom)
+        self.start_combo.setVisible(custom)
+        self.stop_label.setVisible(custom)
+        self.stop_combo.setVisible(custom)
+
     @staticmethod
     def _format_minutes(value: object) -> str:
         if not isinstance(value, (int, float)):
             return "N/A"
         total = max(0, int(value))
         hours, minutes = divmod(total, 60)
-        return f"{hours}h {minutes}m" if hours else f"{minutes}m"
+        return (
+            f"{hours}h {minutes}m"
+            if hours
+            else f"{minutes}m"
+        )
 
     def refresh(self) -> None:
         info = self.controller.status()
@@ -981,17 +971,20 @@ class BatteryPage(QWidget):
             self.limit_card.value_label.setText("Unsupported")
             self.apply_button.setEnabled(False)
             self.details.setPlainText(
-                info.get("reason") or "No battery device detected."
+                info.get("reason")
+                or "No battery device detected."
             )
             self.status.setText(
-                info.get("reason") or "No battery device detected."
+                info.get("reason")
+                or "No battery device detected."
             )
             return
 
         capacity = info.get("capacity")
         health = info.get("health")
         power = info.get("power_w")
-        limit = info.get("charge_limit")
+        start = info.get("charge_start")
+        stop = info.get("charge_limit")
 
         self.capacity_card.value_label.setText(
             f"{capacity}%"
@@ -1009,20 +1002,42 @@ class BatteryPage(QWidget):
             else "N/A"
         )
         self.limit_card.value_label.setText(
-            f"{limit}%"
-            if isinstance(limit, int)
+            f"{stop}%"
+            if isinstance(stop, int)
             else "Unsupported"
         )
 
-        if isinstance(limit, int):
-            index = self.limit_combo.findText(f"{limit}%")
+        if isinstance(start, int):
+            index = self.start_combo.findText(f"{start}%")
             if index >= 0:
-                blocked = self.limit_combo.blockSignals(True)
-                self.limit_combo.setCurrentIndex(index)
-                self.limit_combo.blockSignals(blocked)
+                self.start_combo.setCurrentIndex(index)
 
-        supported = bool(info.get("supports_limit"))
-        self.apply_button.setEnabled(supported)
+        if isinstance(stop, int):
+            index = self.stop_combo.findText(f"{stop}%")
+            if index >= 0:
+                self.stop_combo.setCurrentIndex(index)
+
+        supports_end = bool(info.get("supports_limit"))
+        supports_custom = bool(info.get("supports_custom"))
+
+        self.apply_button.setEnabled(
+            supports_end or supports_custom
+        )
+
+        # Match UI mode to the actual current state.
+        if stop == 100:
+            mode = "Full Charge"
+        elif stop == 80:
+            mode = "Locked at 80%"
+        elif supports_custom:
+            mode = "Custom"
+        else:
+            mode = "Custom"
+
+        blocked = self.mode_combo.blockSignals(True)
+        self.mode_combo.setCurrentText(mode)
+        self.mode_combo.blockSignals(blocked)
+        self._update_custom_visibility(mode)
 
         charger = info.get("charger_connected")
         charger_text = (
@@ -1031,39 +1046,84 @@ class BatteryPage(QWidget):
             else "Unknown"
         )
 
-        voltage = info.get("voltage_v")
-        current = info.get("current_a")
-
         lines = [
             f"Device: {info.get('name', 'Battery')}",
             f"State: {info.get('state') or 'Unknown'}",
             f"Charger: {charger_text}",
-            f"Voltage: {voltage:.2f} V" if isinstance(voltage, (int, float)) else "Voltage: N/A",
-            f"Current: {current:.2f} A" if isinstance(current, (int, float)) else "Current: N/A",
-            f"Time estimate: {self._format_minutes(info.get('time_remaining_minutes'))}",
+            (
+                f"Voltage: {info['voltage_v']:.2f} V"
+                if isinstance(info.get("voltage_v"), (int, float))
+                else "Voltage: N/A"
+            ),
+            (
+                f"Current: {info['current_a']:.2f} A"
+                if isinstance(info.get("current_a"), (int, float))
+                else "Current: N/A"
+            ),
+            (
+                f"Time estimate: "
+                f"{self._format_minutes(info.get('time_remaining_minutes'))}"
+            ),
+            (
+                f"Charging thresholds: "
+                f"{start}% → {stop}%"
+                if isinstance(start, int) and isinstance(stop, int)
+                else "Charging thresholds: unavailable"
+            ),
         ]
         self.details.setPlainText("\n".join(lines))
 
-        self.status.setText(
-            "Charge-limit control is supported."
-            if supported
-            else "Live battery telemetry is available, but this laptop/kernel "
-                 "does not expose a writable charge-limit interface."
-        )
+        if supports_custom:
+            self.status.setText(
+                "Charge control available. "
+                "Custom mode uses the kernel's reported threshold interface."
+            )
+        elif supports_end:
+            self.status.setText(
+                "Charge-stop control available. "
+                "Custom start/stop control is not exposed."
+            )
+        else:
+            self.status.setText(
+                "Live battery telemetry is available, but the current Linux "
+                "battery driver does not expose charge thresholds. "
+                "For Clevo-family FlexiCharger support, a compatible "
+                "clevo_acpi interface may be required."
+            )
 
-    def apply_limit(self) -> None:
-        value = int(self.limit_combo.currentText().rstrip("%"))
-        ok, message = self.controller.set_limit(value)
+    def apply_mode(self) -> None:
+        mode = self.mode_combo.currentText()
+
+        if mode == "Full Charge":
+            ok, message = self.controller.set_limit(100)
+        elif mode == "Locked at 80%":
+            ok, message = self.controller.set_limit(
+                80,
+                start_percent=70,
+            )
+        else:
+            start = int(
+                self.start_combo.currentText().rstrip("%")
+            )
+            stop = int(
+                self.stop_combo.currentText().rstrip("%")
+            )
+            ok, message = self.controller.set_limit(
+                stop,
+                start_percent=start,
+            )
 
         if not ok:
-            show_error(self, message or "Unable to set battery limit.")
+            show_error(
+                self,
+                message or "Unable to apply charging mode.",
+            )
             return
 
         self.status.setText(
-            f"Battery charge limit requested: {value}%."
+            f"{mode} charging mode applied."
         )
         self.refresh()
-
 
 class SettingsPage(QWidget):
     def __init__(
