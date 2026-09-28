@@ -50,7 +50,7 @@ class GraphicsController:
 
     def get_default_power(self) -> dict[str, Any]:
         """Read-only NVIDIA default power/TGP information."""
-        info = self.nvidia.get_power_limits()
+        info = self.nvidia.get_default_power()
         if not info.get("available"):
             return info
 
