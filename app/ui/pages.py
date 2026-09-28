@@ -224,7 +224,6 @@ class DashboardPage(QWidget):
 class PerformancePage(QWidget):
     def __init__(self, controller: PerformanceController):
         super().__init__()
-
         self.controller = controller
 
         layout = QVBoxLayout(self)
@@ -233,7 +232,7 @@ class PerformancePage(QWidget):
 
         title, subtitle = page_header(
             "Performance",
-            "System profiles and simple CPU energy preference",
+            "System-wide profiles for everyday use, work and gaming",
         )
         layout.addWidget(title)
         layout.addWidget(subtitle)
@@ -261,44 +260,16 @@ class PerformancePage(QWidget):
 
         layout.addWidget(profile_group)
 
-        cpu_group = QGroupBox("CPU Energy Preference")
-        cpu_form = QFormLayout(cpu_group)
-
-        self.driver_label = QLabel("--")
-        self.epp_combo = QComboBox()
-        for key in self.controller.EPP_OPTIONS:
-            self.epp_combo.addItem(
-                self.controller.EPP_LABELS[key],
-                key,
-            )
-
-        self.epp_apply = QPushButton("Apply")
-        self.epp_apply.clicked.connect(
-            lambda: self.set_epp(
-                self.epp_combo.currentData()
-            )
-        )
-
-        cpu_form.addRow("CPU driver:", self.driver_label)
-        epp_row = QHBoxLayout()
-        epp_row.addWidget(self.epp_combo)
-        epp_row.addWidget(self.epp_apply)
-        cpu_form.addRow("Preference:", epp_row)
-
         note = QLabel(
-            "Low = energy saving • Mid = balanced • High = performance. "
-            "CPU power-limit and voltage controls are intentionally not exposed "
-            "because the G6 KF firmware keeps those controls locked."
+            "Performance profiles change the standard Linux system power profile. "
+            "CPU-specific controls live on the dedicated CPU page."
         )
         note.setObjectName("info")
         note.setWordWrap(True)
-        cpu_form.addRow("", note)
-
-        layout.addWidget(cpu_group)
+        layout.addWidget(note)
 
         self.status = QLabel("Ready")
         self.status.setObjectName("info")
-        self.status.setWordWrap(True)
         layout.addWidget(self.status)
 
         self.refresh_button = QPushButton("Refresh")
@@ -325,32 +296,173 @@ class PerformancePage(QWidget):
         )
         self.refresh_state()
 
-    def set_epp(self, value: str | None) -> None:
-        if not value:
-            return
-
-        result = self.controller.set_epp(value)
-        if not result.ok:
-            show_error(
-                self,
-                result.stderr or "Unable to set energy preference.",
-            )
-            return
-
-        self.status.setText(
-            f"Energy preference set to "
-            f"{self.controller.EPP_LABELS.get(value, value.title())}."
-        )
-        self.refresh_state()
-
     def refresh_state(self) -> None:
-        state = self.controller.state()
+        available = set(self.controller.available_profiles())
+        for key, button in self.profile_buttons.items():
+            button.setEnabled(
+                self.controller.PROFILE_ALIASES[key] in available
+            )
+
+        current = self.controller.current_profile()
+        self.status.setText(
+            f"Current Linux profile: {current or 'Unavailable'}"
+        )
+
+
+class CPUPage(QWidget):
+    def __init__(self, controller):
+        super().__init__()
+        self.controller = controller
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(30, 30, 30, 30)
+        layout.setSpacing(18)
+
+        title, subtitle = page_header(
+            "CPU",
+            "Live CPU telemetry, Turbo, EPP and optional RAPL controls",
+        )
+        layout.addWidget(title)
+        layout.addWidget(subtitle)
+
+        cards = QGridLayout()
+        self.usage_card = metric_card("CPU USAGE", "--", "All cores")
+        self.temp_card = metric_card("TEMPERATURE", "--", "CPU")
+        self.freq_card = metric_card("FREQUENCY", "--", "Average")
+        self.power_card = metric_card("PACKAGE POWER", "--", "RAPL")
+
+        cards.addWidget(self.usage_card, 0, 0)
+        cards.addWidget(self.temp_card, 0, 1)
+        cards.addWidget(self.freq_card, 0, 2)
+        cards.addWidget(self.power_card, 1, 0)
+        layout.addLayout(cards)
+
+        control_group = QGroupBox("CPU Controls")
+        control_form = QFormLayout(control_group)
+
+        self.driver_label = QLabel("--")
+        self.turbo_label = QLabel("--")
+        self.turbo_button = QPushButton("Toggle Turbo")
+        self.turbo_button.clicked.connect(self.toggle_turbo)
+
+        self.epp_combo = QComboBox()
+        for key in self.controller.EPP_OPTIONS:
+            self.epp_combo.addItem(
+                self.controller.EPP_LABELS[key],
+                key,
+            )
+
+        self.epp_apply = QPushButton("Apply")
+        self.epp_apply.clicked.connect(
+            lambda: self.apply_epp(self.epp_combo.currentData())
+        )
+
+        control_form.addRow("CPU driver:", self.driver_label)
+        turbo_row = QHBoxLayout()
+        turbo_row.addWidget(self.turbo_label)
+        turbo_row.addWidget(self.turbo_button)
+        control_form.addRow("Turbo Boost:", turbo_row)
+
+        epp_row = QHBoxLayout()
+        epp_row.addWidget(self.epp_combo)
+        epp_row.addWidget(self.epp_apply)
+        control_form.addRow("Energy Preference:", epp_row)
+
+        layout.addWidget(control_group)
+
+        self.rapl_group = QGroupBox("Intel RAPL Presets")
+        self.rapl_form = QFormLayout(self.rapl_group)
+        self.rapl_status = QLabel("Checking kernel RAPL support...")
+        self.rapl_status.setWordWrap(True)
+        self.rapl_form.addRow("Status:", self.rapl_status)
+
+        self.rapl_current = QLabel("--")
+        self.rapl_range = QLabel("--")
+        self.rapl_form.addRow("Current:", self.rapl_current)
+        self.rapl_form.addRow("Kernel range:", self.rapl_range)
+
+        button_row = QHBoxLayout()
+        self.rapl_buttons: dict[str, QPushButton] = {}
+        for key, label in (
+            ("low", "Low"),
+            ("mid", "Balanced"),
+            ("high", "High"),
+        ):
+            button = QPushButton(label)
+            button.clicked.connect(
+                lambda _=False, value=key: self.apply_rapl(value)
+            )
+            self.rapl_buttons[key] = button
+            button_row.addWidget(button)
+
+        self.rapl_form.addRow("Preset:", button_row)
+        layout.addWidget(self.rapl_group)
+
+        note = QLabel(
+            "RAPL controls are shown only when the Linux kernel exposes PL1/PL2. "
+            "Preset values are clamped to the live kernel range. "
+            "No arbitrary voltage or overclock controls are provided."
+        )
+        note.setObjectName("info")
+        note.setWordWrap(True)
+        layout.addWidget(note)
+
+        self.status = QLabel("Reading CPU...")
+        self.status.setObjectName("info")
+        layout.addWidget(self.status)
+
+        layout.addStretch()
+
+        self.timer = QTimer(self)
+        self.timer.timeout.connect(self.refresh)
+        self.timer.start(1000)
+        self.refresh()
+
+    def refresh(self) -> None:
+        info = self.controller.telemetry()
+
+        usage = __import__(
+            "app.backend.system_info",
+            fromlist=["get_cpu_usage"],
+        ).get_cpu_usage()
+
+        self.usage_card.value_label.setText(
+            f"{usage:.0f}%"
+        )
+        temp = info.get("temperature")
+        self.temp_card.value_label.setText(
+            f"{temp:.0f}°C"
+            if isinstance(temp, (int, float))
+            else "N/A"
+        )
+
+        freq = info.get("frequency_mhz")
+        self.freq_card.value_label.setText(
+            f"{freq:.0f} MHz"
+            if isinstance(freq, (int, float))
+            else "N/A"
+        )
+
+        package_power = info.get("package_power_w")
+        self.power_card.value_label.setText(
+            f"{package_power:.1f} W"
+            if isinstance(package_power, (int, float))
+            else "N/A"
+        )
 
         self.driver_label.setText(
-            state["driver"] or "Unavailable"
+            info.get("driver") or "Unavailable"
         )
 
-        epp = state["epp"]
+        turbo = info.get("turbo")
+        self.turbo_label.setText(
+            "ON" if turbo is True
+            else "OFF" if turbo is False
+            else "Unavailable"
+        )
+        self.turbo_button.setEnabled(turbo is not None)
+
+        epp = info.get("epp")
         if epp:
             blocked = self.epp_combo.blockSignals(True)
             index = self.epp_combo.findData(epp)
@@ -358,14 +470,103 @@ class PerformancePage(QWidget):
                 self.epp_combo.setCurrentIndex(index)
             self.epp_combo.blockSignals(blocked)
 
-        available = set(
-            self.controller.available_profiles()
-        )
-        for key, button in self.profile_buttons.items():
-            button.setEnabled(
-                self.controller.PROFILE_ALIASES[key]
-                in available
+        constraints = info.get("rapl") or []
+        by_index = {item.index: item for item in constraints}
+        if 0 in by_index and 1 in by_index:
+            pl1 = by_index[0]
+            pl2 = by_index[1]
+            self.rapl_status.setText(
+                "Supported: kernel exposes PL1 and PL2."
             )
+            self.rapl_current.setText(
+                f"PL1 {pl1.current_watts:.1f} W • "
+                f"PL2 {pl2.current_watts:.1f} W"
+            )
+
+            ranges = []
+            for item in (pl1, pl2):
+                if (
+                    item.minimum_watts is not None
+                    and item.maximum_watts is not None
+                ):
+                    ranges.append(
+                        f"PL{item.index + 1}: "
+                        f"{item.minimum_watts:.1f}-{item.maximum_watts:.1f} W"
+                    )
+                else:
+                    ranges.append(
+                        f"PL{item.index + 1}: range unavailable"
+                    )
+
+            self.rapl_range.setText(" • ".join(ranges))
+
+            preset_available = any(
+                item.minimum_watts is not None
+                and item.maximum_watts is not None
+                for item in (pl1, pl2)
+            )
+            for button in self.rapl_buttons.values():
+                button.setEnabled(preset_available)
+        else:
+            self.rapl_status.setText(
+                "Not exposed by the current Linux kernel/firmware."
+            )
+            self.rapl_current.setText("--")
+            self.rapl_range.setText("--")
+            for button in self.rapl_buttons.values():
+                button.setEnabled(False)
+
+        self.status.setText(
+            f"{info.get('driver') or 'CPU'} telemetry • live"
+        )
+
+    def toggle_turbo(self) -> None:
+        current = self.controller.turbo_enabled()
+        if current is None:
+            show_error(
+                self,
+                "Turbo Boost control is not exposed by this kernel.",
+            )
+            return
+
+        result = self.controller.set_turbo_enabled(not current)
+        if not result.ok:
+            show_error(
+                self,
+                result.stderr or "Unable to change Turbo Boost.",
+            )
+            return
+
+        self.refresh()
+
+    def apply_epp(self, value: str | None) -> None:
+        if not value:
+            return
+
+        result = self.controller.set_energy_preference(value)
+        if not result.ok:
+            show_error(
+                self,
+                result.stderr or "Unable to change Energy Preference.",
+            )
+            return
+
+        self.refresh()
+
+    def apply_rapl(self, preset: str) -> None:
+        result = self.controller.set_rapl_preset(preset)
+        if not result.ok:
+            show_error(
+                self,
+                result.stderr or "Unable to apply RAPL preset.",
+            )
+            return
+
+        self.status.setText(
+            f"RAPL {preset.title()} preset applied."
+        )
+        self.refresh()
+
 
 class GPUPage(QWidget):
     def __init__(self, controller: GraphicsController):
