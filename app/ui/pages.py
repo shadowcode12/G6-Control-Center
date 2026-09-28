@@ -784,7 +784,7 @@ class FansPage(QWidget):
 
         title, subtitle = page_header(
             "Fans",
-            "Real-time fan RPM and EC telemetry",
+            "Live fan RPM with paired thermal speed profiles",
         )
         layout.addWidget(title)
         layout.addWidget(subtitle)
@@ -801,17 +801,35 @@ class FansPage(QWidget):
         cards.addWidget(self.gpu_duty_card, 1, 1)
         layout.addLayout(cards)
 
-        info_group = QGroupBox("Fan Control")
-        info_layout = QVBoxLayout(info_group)
+        control_group = QGroupBox("Fan Speed")
+        controls = QHBoxLayout(control_group)
+
+        self.mode_buttons: dict[str, QPushButton] = {}
+        for mode, label in (
+            ("quiet", "Quiet"),
+            ("balanced", "Balanced"),
+            ("high", "High"),
+            ("automatic", "Automatic"),
+        ):
+            button = QPushButton(label)
+            button.setObjectName("profileButton")
+            button.setMinimumHeight(48)
+            button.clicked.connect(
+                lambda _=False, value=mode: self.set_mode(value)
+            )
+            self.mode_buttons[mode] = button
+            controls.addWidget(button)
+
+        layout.addWidget(control_group)
+
         self.control_note = QLabel(
-            "Manual per-fan control is intentionally disabled. "
-            "On the G6 KF the EC behavior does not make independent fan "
-            "control useful enough to expose as a normal feature. "
-            "This build focuses on safe, live telemetry."
+            "Fan profiles are paired: both physical fans are controlled together. "
+            "Independent CPU/GPU fan control is not exposed. Automatic returns "
+            "thermal control to the firmware."
         )
+        self.control_note.setObjectName("info")
         self.control_note.setWordWrap(True)
-        info_layout.addWidget(self.control_note)
-        layout.addWidget(info_group)
+        layout.addWidget(self.control_note)
 
         status_group = QGroupBox("Native EC Status")
         status_layout = QVBoxLayout(status_group)
@@ -828,6 +846,17 @@ class FansPage(QWidget):
         self.timer.start(1000)
         self.refresh_status()
 
+    def set_mode(self, mode: str) -> None:
+        ok, message = self.controller.set_mode(mode)
+        if not ok:
+            show_error(
+                self,
+                message or "Unable to change fan speed mode.",
+            )
+            return
+
+        self.refresh_status()
+
     def refresh_status(self) -> None:
         info = self.controller.status()
         fans = info.get("fans") or []
@@ -837,7 +866,9 @@ class FansPage(QWidget):
             rpm = fan.get("rpm")
             duty = fan.get("duty_percent")
             self.cpu_fan_card.value_label.setText(
-                f"{int(rpm)}" if isinstance(rpm, (int, float)) else "N/A"
+                f"{int(rpm)}"
+                if isinstance(rpm, (int, float))
+                else "N/A"
             )
             self.cpu_duty_card.value_label.setText(
                 f"{int(duty)}%"
@@ -853,7 +884,9 @@ class FansPage(QWidget):
             rpm = fan.get("rpm")
             duty = fan.get("duty_percent")
             self.gpu_fan_card.value_label.setText(
-                f"{int(rpm)}" if isinstance(rpm, (int, float)) else "N/A"
+                f"{int(rpm)}"
+                if isinstance(rpm, (int, float))
+                else "N/A"
             )
             self.gpu_duty_card.value_label.setText(
                 f"{int(duty)}%"
@@ -864,12 +897,20 @@ class FansPage(QWidget):
             self.gpu_fan_card.value_label.setText("N/A")
             self.gpu_duty_card.value_label.setText("N/A")
 
+        mode = info.get("mode", "automatic")
+        for key, button in self.mode_buttons.items():
+            button.setEnabled(info.get("available", False) or key == "automatic")
+            button.setProperty("active", key == mode)
+            button.style().unpolish(button)
+            button.style().polish(button)
+
         if info.get("available"):
             source = info.get("source", "native")
             self.output.setPlainText(
                 f"Source: {source}\n"
                 f"EC telemetry: live\n"
-                f"Independent fan writes: disabled"
+                f"Current mode: {mode.title()}\n"
+                f"Independent fan control: disabled"
             )
         else:
             self.output.setPlainText(
