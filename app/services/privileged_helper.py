@@ -40,6 +40,28 @@ def set_epp(value: str) -> None:
             write_text(path, value)
 
 
+def battery_full_charge() -> None:
+    end_paths = []
+    for pattern in (
+        "/sys/class/power_supply/BAT*/charge_control_end_threshold",
+        "/sys/class/power_supply/BAT*/charge_stop_threshold",
+    ):
+        end_paths.extend(glob.glob(pattern))
+
+    if not end_paths:
+        raise RuntimeError("Battery charge threshold is not supported.")
+
+    for path in sorted(set(end_paths)):
+        write_text(path, "100")
+
+    # Standard charging mode means no custom FlexiCharger thresholds.
+    for path in glob.glob("/sys/class/power_supply/BAT*/charge_type"):
+        try:
+            write_text(path, "Standard")
+        except OSError:
+            pass
+
+
 def battery_threshold(value: int) -> None:
     if not 50 <= value <= 100:
         raise ValueError("Battery threshold must be between 50 and 100.")
@@ -127,6 +149,8 @@ def main() -> int:
     try:
         if action == "epp" and len(sys.argv) == 3:
             set_epp(sys.argv[2])
+        elif action == "battery-full-charge" and len(sys.argv) == 2:
+            battery_full_charge()
         elif action == "battery-threshold" and len(sys.argv) == 3:
             battery_threshold(int(sys.argv[2]))
         elif action == "battery-threshold-custom" and len(sys.argv) == 4:
