@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 from PySide6.QtGui import QAction, QIcon
 from PySide6.QtWidgets import QMenu, QSystemTrayIcon, QWidget
 
@@ -49,8 +51,19 @@ class TrayController:
 
     @staticmethod
     def _icon() -> QIcon:
-        icon = QIcon.fromTheme("g6-control-center")
-        return icon
+        themed = QIcon.fromTheme("g6-control-center")
+        if not themed.isNull():
+            return themed
+
+        source_icon = (
+            Path(__file__).resolve().parents[2]
+            / "assets"
+            / "g6-control-center.svg"
+        )
+        if source_icon.exists():
+            return QIcon(str(source_icon))
+
+        return QIcon()
 
     def show(self) -> bool:
         if not QSystemTrayIcon.isSystemTrayAvailable():
