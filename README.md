@@ -20,7 +20,7 @@ The G6 KF firmware exposes a number of controls differently from desktop platfor
 
 The native EC telemetry service is read-only. It reads the verified G6 KF EC temperature, fan-duty and tachometer registers and publishes a short-lived snapshot at `/run/g6-control-center/telemetry.json`.
 
-Battery charging uses standard Linux power-supply threshold interfaces when the active battery driver provides them. Clevo-family FlexiCharger support on Linux depends on a compatible `clevo_acpi` driver exposing those interfaces; not every Clevo-based machine exposes them. Linux's standard `charge_control_*` interface defines `Custom` charging as the mode that uses start/stop thresholds. citeturn592304search0turn318739search5
+Battery charging uses standard Linux power-supply threshold interfaces when the active battery driver provides them. Clevo-family FlexiCharger support on Linux depends on a compatible `clevo_acpi` driver exposing those interfaces; not every Clevo-based machine exposes them. Linux's standard `charge_control_*` interface defines `Custom` charging as the mode that uses start/stop thresholds.
 
 ## Installation
 
