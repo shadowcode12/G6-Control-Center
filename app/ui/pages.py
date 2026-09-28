@@ -1048,6 +1048,7 @@ class BatteryPage(QWidget):
 
         lines = [
             f"Device: {info.get('name', 'Battery')}",
+            f"Driver: {info.get('driver') or 'Kernel default'}",
             f"State: {info.get('state') or 'Unknown'}",
             f"Charger: {charger_text}",
             (
@@ -1076,7 +1077,7 @@ class BatteryPage(QWidget):
         if supports_custom:
             self.status.setText(
                 "Charge control available. "
-                "Custom mode uses the kernel's reported threshold interface."
+                "Custom mode uses the kernel's reported start/stop thresholds."
             )
         elif supports_end:
             self.status.setText(
@@ -1095,7 +1096,7 @@ class BatteryPage(QWidget):
         mode = self.mode_combo.currentText()
 
         if mode == "Full Charge":
-            ok, message = self.controller.set_limit(100)
+            ok, message = self.controller.set_full_charge()
         elif mode == "Locked at 80%":
             ok, message = self.controller.set_limit(
                 80,
@@ -1187,8 +1188,8 @@ class SettingsPage(QWidget):
             "Hardware boundary: this build does not use gigactl. "
             "The native fan backend is read-only and obtains G6 KF fan "
             "telemetry from the Linux EC interface through a small root-owned "
-            "telemetry service. CPU and NVIDIA power controls still use "
-            "standard Linux/NVIDIA interfaces and validate driver-reported ranges."
+            "telemetry service. CPU power-limit, GPU power-limit, "
+            "overclocking and undervolting controls are intentionally not exposed."
         )
         safety.setObjectName("info")
         safety.setWordWrap(True)
