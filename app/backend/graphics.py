@@ -7,15 +7,7 @@ from app.backend.nvidia import NvidiaController
 
 
 class GraphicsController:
-    """
-    Unified read-only GPU backend.
-
-    PRIME mode selects the preferred GPU when possible:
-      - nvidia: NVIDIA
-      - intel: Intel
-      - on-demand: Intel for the always-on desktop path
-    Both devices remain detectable, so the UI can explain what is present.
-    """
+    """Unified read-only Intel/NVIDIA GPU telemetry with PRIME detection."""
 
     def __init__(self) -> None:
         self.nvidia = NvidiaController()
@@ -33,9 +25,7 @@ class GraphicsController:
 
         if mode == "nvidia" and nvidia.get("available"):
             preferred = nvidia
-        elif mode == "intel" and intel.get("available"):
-            preferred = intel
-        elif mode == "on-demand" and intel.get("available"):
+        elif mode in {"intel", "on-demand"} and intel.get("available"):
             preferred = intel
         elif nvidia.get("available"):
             preferred = nvidia
@@ -58,20 +48,17 @@ class GraphicsController:
             "reason": "No supported GPU telemetry source was detected.",
         }
 
-    def get_power_limits(self) -> dict[str, Any]:
-        gpu = self.preferred_gpu()
-        if gpu.get("vendor") != "nvidia":
-            return {
-                "available": False,
-                "reason": "GPU power-limit control is only exposed for NVIDIA.",
-            }
-        return self.nvidia.get_power_limits()
+    def get_default_power(self) -> dict[str, Any]:
+        """Read-only NVIDIA default power/TGP information."""
+        info = self.nvidia.get_power_limits()
+        if not info.get("available"):
+            return info
 
-    def set_power_limit(self, watts: float) -> tuple[bool, str]:
-        gpu = self.preferred_gpu()
-        if gpu.get("vendor") != "nvidia":
-            return False, "GPU power-limit control is only available for NVIDIA."
-        return self.nvidia.set_power_limit(watts)
+        return {
+            "available": True,
+            "name": info.get("name"),
+            "default": info.get("default"),
+        }
 
     def set_prime_mode(self, mode: str) -> tuple[bool, str]:
         return self.nvidia.set_prime_mode(mode)
