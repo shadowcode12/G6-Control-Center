@@ -20,6 +20,7 @@ from app.backend.system_info import (
     get_ram_usage,
 )
 from app.backend.nvidia import get_gpu_info
+from app.ui.performance_page import PerformancePage
 
 
 class DashboardPage(QWidget):
@@ -137,34 +138,6 @@ class DashboardPage(QWidget):
             f"RAM: {used_gb:.1f} / {total_gb:.1f} GB   |   "
             f"GPU: Not available"
         )
-
-
-class PerformancePage(QWidget):
-    def __init__(self):
-        super().__init__()
-
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(30, 30, 30, 30)
-        layout.setSpacing(20)
-
-        title = QLabel("Performance")
-        title.setObjectName("pageTitle")
-
-        subtitle = QLabel(
-            "CPU and system performance controls"
-        )
-        subtitle.setObjectName("subtitle")
-
-        layout.addWidget(title)
-        layout.addWidget(subtitle)
-
-        info = QLabel(
-            "Performance profiles will be connected here."
-        )
-        info.setObjectName("info")
-
-        layout.addWidget(info)
-        layout.addStretch()
 
 
 class SimplePage(QWidget):
