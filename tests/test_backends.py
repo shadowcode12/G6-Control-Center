@@ -19,9 +19,16 @@ def test_profile_aliases():
 def test_epp_values_are_constrained():
     assert set(PerformanceController.EPP_OPTIONS) == {
         "performance",
-        "balance_performance",
         "balance_power",
         "power",
+    }
+
+
+def test_epp_labels():
+    assert PerformanceController.EPP_LABELS == {
+        "power": "Low",
+        "balance_power": "Mid",
+        "performance": "High",
     }
 
 
