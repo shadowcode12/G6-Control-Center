@@ -13,10 +13,12 @@ Linux-native control center for Gigabyte G5/G6-class gaming laptops.
 - Full Charge, Locked at 80% and Custom charging modes when the Linux battery driver exposes the corresponding threshold interfaces.
 - Simple CPU Energy Preference: Low / Mid / High.
 - System performance profiles: Silent / Balanced / Performance / Gaming.
+- Dedicated CPU page with Turbo Boost, Low / Mid / High EPP and optional RAPL presets.
+- Paired fan speed profiles: Quiet / Balanced / High / Automatic.
 
 ## G6 KF hardware policy
 
-The G6 KF firmware exposes a number of controls differently from desktop platforms. This application therefore treats CPU/GPU power limits, voltage controls, overclocking and per-fan manual control as unavailable features rather than pretending software can safely override the firmware.
+The G6 KF firmware exposes a number of controls differently from desktop platforms. This application therefore keeps arbitrary CPU/GPU power limits, voltage controls and overclocking out of the UI. When the Linux kernel exposes RAPL, only validated Low / Mid / High presets are offered. Fan control is paired across both fans; independent single-fan control is not exposed.
 
 The native EC telemetry service is read-only. It reads the verified G6 KF EC temperature, fan-duty and tachometer registers and publishes a short-lived snapshot at `/run/g6-control-center/telemetry.json`.
 
