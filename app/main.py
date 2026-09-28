@@ -297,8 +297,7 @@ class MainWindow(QMainWindow):
         layout.addStretch()
 
         status = QLabel(
-            "●  System Ready
-"
+            "●  System Ready\n"
             "   Gigabyte G6 KF"
         )
         status.setObjectName("status")
