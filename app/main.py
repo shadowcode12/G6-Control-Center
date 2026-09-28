@@ -16,12 +16,14 @@ from PySide6.QtWidgets import (
 )
 
 from app.backend.battery import BatteryController
+from app.backend.cpu import CpuController
 from app.backend.fans import FanController
 from app.backend.graphics import GraphicsController
 from app.backend.keyboard import KeyboardController
 from app.backend.performance import PerformanceController
 from app.ui.pages import (
     BatteryPage,
+    CPUPage,
     DashboardPage,
     FansPage,
     GPUPage,
@@ -206,6 +208,7 @@ class MainWindow(QMainWindow):
         self.setMinimumSize(980, 650)
 
         self.performance = PerformanceController()
+        self.cpu = CpuController()
         self.graphics = GraphicsController()
         self.fans = FanController()
         self.keyboard = KeyboardController()
@@ -230,6 +233,7 @@ class MainWindow(QMainWindow):
                 self.graphics,
             ),
             PerformancePage(self.performance),
+            CPUPage(self.cpu),
             GPUPage(self.graphics),
             FansPage(self.fans),
             RGBPage(self.keyboard),
@@ -288,6 +292,7 @@ class MainWindow(QMainWindow):
         for name in (
             "Dashboard",
             "Performance",
+            "CPU",
             "GPU",
             "Fans",
             "RGB",
