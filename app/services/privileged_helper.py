@@ -121,6 +121,36 @@ def gpu_power_limit(watts: float) -> None:
     if watts <= 0:
         raise ValueError("GPU power limit must be positive.")
 
+    query = subprocess.run(
+        [
+            "nvidia-smi",
+            "--query-gpu=power.min_limit,power.max_limit",
+            "--format=csv,noheader,nounits",
+        ],
+        capture_output=True,
+        text=True,
+        timeout=5,
+        check=False,
+    )
+    if query.returncode != 0:
+        raise RuntimeError(
+            query.stderr.strip() or "Could not read NVIDIA power limits."
+        )
+
+    values = [item.strip() for item in query.stdout.strip().split(",")]
+    if len(values) >= 2:
+        try:
+            minimum = float(values[0])
+            maximum = float(values[1])
+            if not minimum <= watts <= maximum:
+                raise ValueError(
+                    f"GPU power limit must be between {minimum:.1f} and {maximum:.1f} W."
+                )
+        except ValueError as exc:
+            if "between" in str(exc):
+                raise
+            raise RuntimeError("NVIDIA returned an invalid power-limit range.")
+
     result = subprocess.run(
         ["nvidia-smi", "--power-limit", str(watts)],
         capture_output=True,
