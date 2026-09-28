@@ -25,6 +25,25 @@ def write_text(path: str, value: str) -> None:
     pathlib.Path(path).write_text(value, encoding="utf-8")
 
 
+def set_turbo(enabled: bool) -> None:
+    candidates = [
+        "/sys/devices/system/cpu/intel_pstate/no_turbo",
+        "/sys/devices/system/cpu/cpufreq/boost",
+    ]
+
+    for path in candidates:
+        if not os.path.exists(path):
+            continue
+
+        if path.endswith("no_turbo"):
+            write_text(path, "0" if enabled else "1")
+        else:
+            write_text(path, "1" if enabled else "0")
+        return
+
+    raise RuntimeError("No supported Turbo Boost control was found.")
+
+
 def set_epp(value: str) -> None:
     if value not in ALLOWED_EPP:
         raise ValueError(f"Unsupported EPP value: {value}")
@@ -120,6 +139,83 @@ def battery_threshold_custom(start: int, end: int) -> None:
             except OSError:
                 pass
 
+def rapl_preset(pl1_watts: float, pl2_watts: float) -> None:
+    if pl1_watts <= 0 or pl2_watts <= 0:
+        raise ValueError("RAPL limits must be positive.")
+
+    roots = []
+    for pattern in (
+        "/sys/class/powercap/intel-rapl:*",
+        "/sys/class/powercap/intel-rapl-mmio:*",
+    ):
+        roots.extend(
+            path for path in glob.glob(pattern)
+            if path.count(":") == 2
+        )
+
+    if not roots:
+        raise RuntimeError("Intel RAPL is unavailable.")
+
+    chosen: dict[int, str] = {}
+    for base in sorted(set(roots)):
+        if base.startswith("/sys/class/powercap/intel-rapl:"):
+            for index in (0, 1):
+                path = os.path.join(
+                    base,
+                    f"constraint_{index}_power_limit_uw",
+                )
+                if os.path.exists(path):
+                    chosen[index] = path
+
+    # Fall back to the MMIO interface when MSR RAPL is not exposed.
+    if len(chosen) < 2:
+        for base in sorted(set(roots)):
+            for index in (0, 1):
+                path = os.path.join(
+                    base,
+                    f"constraint_{index}_power_limit_uw",
+                )
+                if os.path.exists(path):
+                    chosen.setdefault(index, path)
+
+    if 0 not in chosen or 1 not in chosen:
+        raise RuntimeError("Both RAPL PL1 and PL2 controls are unavailable.")
+
+    targets = {
+        0: float(pl1_watts),
+        1: float(pl2_watts),
+    }
+
+    for index, path in chosen.items():
+        base = os.path.dirname(path)
+        min_path = os.path.join(
+            base,
+            f"constraint_{index}_min_power_uw",
+        )
+        max_path = os.path.join(
+            base,
+            f"constraint_{index}_max_power_uw",
+        )
+
+        target_uw = int(round(targets[index] * 1_000_000))
+
+        if os.path.exists(min_path):
+            minimum = int(pathlib.Path(min_path).read_text().strip())
+            if target_uw < minimum:
+                raise ValueError(
+                    f"PL{index + 1} is below the kernel minimum."
+                )
+
+        if os.path.exists(max_path):
+            maximum = int(pathlib.Path(max_path).read_text().strip())
+            if target_uw > maximum:
+                raise ValueError(
+                    f"PL{index + 1} is above the kernel maximum."
+                )
+
+        write_text(path, str(target_uw))
+
+
 def prime_mode(mode: str) -> None:
     if mode not in {"intel", "on-demand", "nvidia"}:
         raise ValueError("Unsupported PRIME mode.")
@@ -147,7 +243,9 @@ def main() -> int:
     action = sys.argv[1]
 
     try:
-        if action == "epp" and len(sys.argv) == 3:
+        if action == "turbo" and len(sys.argv) == 3:
+            set_turbo(sys.argv[2] == "on")
+        elif action == "epp" and len(sys.argv) == 3:
             set_epp(sys.argv[2])
         elif action == "battery-full-charge" and len(sys.argv) == 2:
             battery_full_charge()
@@ -155,6 +253,8 @@ def main() -> int:
             battery_threshold(int(sys.argv[2]))
         elif action == "battery-threshold-custom" and len(sys.argv) == 4:
             battery_threshold_custom(int(sys.argv[2]), int(sys.argv[3]))
+        elif action == "rapl-preset" and len(sys.argv) == 4:
+            rapl_preset(float(sys.argv[2]), float(sys.argv[3]))
         elif action == "prime-mode" and len(sys.argv) == 3:
             prime_mode(sys.argv[2])
         else:
