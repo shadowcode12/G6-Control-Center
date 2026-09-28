@@ -14,19 +14,38 @@ Linux-native control center for Gigabyte G5/G6-class gaming laptops.
 - Battery status, health estimate and charge-limit control when exposed.
 - Settings and backend diagnostics.
 
-## Hardware boundary
+## G6 KF focus
 
-The app never writes Gigabyte/Clevo EC registers directly. Fan and RGB EC operations are delegated to gigactl.
-CPU controls use standard Linux power-management interfaces. NVIDIA controls use nvidia-smi and PRIME when available.
-Privileged operations are restricted to a fixed-action helper and PolicyKit.
+The project is developed and tested around the Gigabyte G6 KF. Its fan and keyboard EC operations are delegated to gigactl rather than reimplementing EC register writes.
+
+## Installation
+
+For development, create a Python 3.11+ virtual environment and run the project directly.
+
+For a local desktop-style install, run:
+
+    sudo ./packaging/install.sh
+
+This installs the application under /opt/g6-control-center, a trusted root-owned privileged helper, a desktop entry, and a g6-control-center launcher.
 
 ## Development
 
-Use a Python 3.11+ virtual environment, install the project in editable mode, run pytest, then start with python -m app.main.
+    python3 -m venv .venv
+    source .venv/bin/activate
+    pip install -e .
+    pip install pytest
+    pytest -q
+    python -m app.main
+
+## Hardware boundary
+
+The app never writes Gigabyte or Clevo EC registers directly. Fan and RGB operations go through gigactl.
+CPU controls use standard Linux power-management interfaces. NVIDIA controls use nvidia-smi and prime-select when available.
+Privileged operations use a fixed-action root-owned helper through PolicyKit.
 
 ## Safety
 
-Power limits and Turbo can affect thermals and battery life. The app validates values against kernel/driver-exposed ranges where available.
+Power limits and Turbo can affect thermals, performance and battery life. The app validates values against kernel/driver-exposed ranges where available.
 Manual fan control is delegated to gigactl and can be returned to firmware auto.
 
 ## License
