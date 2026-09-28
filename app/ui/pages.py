@@ -234,7 +234,11 @@ class PerformancePage(QWidget):
         self.driver_label = QLabel("--")
         self.epp_combo = QComboBox()
         self.epp_combo.addItems(self.controller.EPP_OPTIONS)
-        self.epp_combo.currentTextChanged.connect(self.set_epp)
+
+        self.epp_apply = QPushButton("Apply EPP")
+        self.epp_apply.clicked.connect(
+            lambda: self.set_epp(self.epp_combo.currentText())
+        )
 
         self.turbo_button = QPushButton("Toggle Turbo")
         self.turbo_button.clicked.connect(self.toggle_turbo)
@@ -242,7 +246,10 @@ class PerformancePage(QWidget):
         self.turbo_label = QLabel("--")
 
         cpu_form.addRow("CPU driver:", self.driver_label)
-        cpu_form.addRow("Energy preference:", self.epp_combo)
+        epp_row = QHBoxLayout()
+        epp_row.addWidget(self.epp_combo)
+        epp_row.addWidget(self.epp_apply)
+        cpu_form.addRow("Energy preference:", epp_row)
         cpu_form.addRow("Turbo status:", self.turbo_label)
         cpu_form.addRow("", self.turbo_button)
 
