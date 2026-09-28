@@ -29,6 +29,7 @@ from app.ui.pages import (
     SettingsPage,
 )
 from app.version import APP_VERSION
+from app.ui.tray import TrayController
 
 
 APP_STYLE = """
@@ -248,6 +249,8 @@ class MainWindow(QMainWindow):
 
         self.setCentralWidget(central)
         self.setStyleSheet(APP_STYLE)
+        self.tray_controller = TrayController(self, self.performance)
+        self.tray_controller.show()
 
         self.navigation.currentRowChanged.connect(
             self.stack.setCurrentIndex
