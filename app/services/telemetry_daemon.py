@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import fcntl
 import json
 import os
 from pathlib import Path
@@ -42,13 +43,19 @@ def _duty(raw: int) -> int:
 
 
 def read_snapshot(ec: EmbeddedController) -> dict:
+    lock_path = Path("/run/lock/g6-control-center-ec.lock")
+    lock_path.parent.mkdir(parents=True, exist_ok=True)
+
     try:
-        cpu = ec.read_u8(CPU_TEMP)
-        gpu = ec.read_u8(GPU_TEMP)
-        duty1 = ec.read_u8(DUTY_FAN1)
-        duty2 = ec.read_u8(DUTY_FAN2)
-        period1 = ec.read_u16_be(TACH1_HI, TACH1_LO)
-        period2 = ec.read_u16_be(TACH2_HI, TACH2_LO)
+        with lock_path.open("w") as lock:
+            fcntl.flock(lock, fcntl.LOCK_EX)
+
+            cpu = ec.read_u8(CPU_TEMP)
+            gpu = ec.read_u8(GPU_TEMP)
+            duty1 = ec.read_u8(DUTY_FAN1)
+            duty2 = ec.read_u8(DUTY_FAN2)
+            period1 = ec.read_u16_be(TACH1_HI, TACH1_LO)
+            period2 = ec.read_u16_be(TACH2_HI, TACH2_LO)
 
         return {
             "available": True,
