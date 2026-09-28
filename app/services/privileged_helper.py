@@ -216,6 +216,102 @@ def rapl_preset(pl1_watts: float, pl2_watts: float) -> None:
         write_text(path, str(target_uw))
 
 
+def _check_g6_kf() -> None:
+    vendor = ""
+    product = ""
+    for path in (
+        "/sys/class/dmi/id/sys_vendor",
+        "/sys/class/dmi/id/product_name",
+    ):
+        try:
+            value = pathlib.Path(path).read_text(
+                encoding="utf-8",
+                errors="ignore",
+            ).strip()
+        except OSError:
+            value = ""
+
+        if path.endswith("sys_vendor"):
+            vendor = value
+        else:
+            product = value
+
+    if vendor.lower() != "gigabyte" or product.upper() != "G6 KF":
+        raise RuntimeError(
+            "Native EC fan control is restricted to the verified Gigabyte G6 KF."
+        )
+
+
+def _ec_write_byte(handle, offset: int, value: int) -> None:
+    handle.seek(offset)
+    handle.write(bytes([value & 0xFF]))
+    handle.flush()
+
+
+def _fan_command(handle, fan_number: int, duty: int | None) -> None:
+    # G6 KF/Clevo EC fan mailbox:
+    # FDAT = 0xF9, FBUF = 0xFA, FCMD/doorbell = 0xF8.
+    _ec_write_byte(handle, 0xF9, 0xFF if duty is None else fan_number)
+    _ec_write_byte(handle, 0xFA, fan_number if duty is None else duty)
+    _ec_write_byte(handle, 0xF8, 0xC1)
+
+
+def fan_mode(mode: str) -> None:
+    _check_g6_kf()
+
+    write_support = "/sys/module/ec_sys/parameters/write_support"
+    try:
+        value = pathlib.Path(write_support).read_text().strip().upper()
+    except OSError as exc:
+        raise RuntimeError("ec_sys write support is unavailable.") from exc
+
+    if value not in {"Y", "1"}:
+        raise RuntimeError(
+            "ec_sys is read-only. Enable ec_sys write support before using fan modes."
+        )
+
+    duty_by_mode = {
+        "quiet": 45,
+        "balanced": 60,
+        "high": 100,
+        "automatic": None,
+    }
+    if mode not in duty_by_mode:
+        raise ValueError("Unsupported fan mode.")
+
+    ec_path = "/sys/kernel/debug/ec/ec0/io"
+    if not os.path.exists(ec_path):
+        raise RuntimeError("Linux EC interface is unavailable.")
+
+    import fcntl
+
+    lock_path = "/run/lock/g6-control-center-ec.lock"
+    pathlib.Path(lock_path).parent.mkdir(
+        parents=True,
+        exist_ok=True,
+    )
+
+    with open(lock_path, "w") as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+
+        with open(ec_path, "r+b", buffering=0) as ec:
+            duty = duty_by_mode[mode]
+
+            # Never expose independent fan selection in the UI. A mode is a
+            # paired thermal profile and applies to both physical fans.
+            _fan_command(ec, 1, duty)
+            _fan_command(ec, 2, duty)
+
+        pathlib.Path("/run/g6-control-center").mkdir(
+            parents=True,
+            exist_ok=True,
+        )
+        pathlib.Path("/run/g6-control-center/fan_mode").write_text(
+            mode,
+            encoding="utf-8",
+        )
+
+
 def prime_mode(mode: str) -> None:
     if mode not in {"intel", "on-demand", "nvidia"}:
         raise ValueError("Unsupported PRIME mode.")
@@ -255,6 +351,8 @@ def main() -> int:
             battery_threshold_custom(int(sys.argv[2]), int(sys.argv[3]))
         elif action == "rapl-preset" and len(sys.argv) == 4:
             rapl_preset(float(sys.argv[2]), float(sys.argv[3]))
+        elif action == "fan-mode" and len(sys.argv) == 3:
+            fan_mode(sys.argv[2])
         elif action == "prime-mode" and len(sys.argv) == 3:
             prime_mode(sys.argv[2])
         else:
