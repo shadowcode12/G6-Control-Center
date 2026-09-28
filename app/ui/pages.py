@@ -23,8 +23,9 @@ from PySide6.QtWidgets import (
 )
 
 from app.backend.battery import BatteryController
-from app.backend.gigactl import GigaCtlController
-from app.backend.nvidia import NvidiaController
+from app.backend.fans import FanController
+from app.backend.graphics import GraphicsController
+from app.backend.keyboard import KeyboardController
 from app.backend.performance import PerformanceController
 from app.backend.system_info import (
     get_cpu_frequency,
@@ -76,15 +77,19 @@ def show_error(parent: QWidget, message: str) -> None:
 
 
 class DashboardPage(QWidget):
-    def __init__(self, performance: PerformanceController, battery: BatteryController,
-                 gigactl: GigaCtlController, nvidia: NvidiaController):
+    def __init__(
+        self,
+        performance: PerformanceController,
+        battery: BatteryController,
+        fans: FanController,
+        graphics: GraphicsController,
+    ):
         super().__init__()
 
         self.performance = performance
         self.battery = battery
-        self.gigactl = gigactl
-        self.nvidia = nvidia
-        self.refresh_count = 0
+        self.fans = fans
+        self.graphics = graphics
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(30, 30, 30, 30)
@@ -129,7 +134,7 @@ class DashboardPage(QWidget):
 
         self.timer = QTimer(self)
         self.timer.timeout.connect(self.refresh)
-        self.timer.start(1500)
+        self.timer.start(1000)
         self.refresh()
 
     def refresh(self) -> None:
@@ -137,54 +142,82 @@ class DashboardPage(QWidget):
         cpu_temp = get_cpu_temperature()
         cpu_freq = get_cpu_frequency()
 
-        if cpu_temp is None:
-            self.cpu_card.value_label.setText("--")
-        else:
-            self.cpu_card.value_label.setText(f"{cpu_temp:.0f}°C")
+        self.cpu_card.value_label.setText(
+            f"{cpu_temp:.0f}°C" if cpu_temp is not None else "--"
+        )
 
         ram_percent, used_gb, total_gb = get_ram_usage()
         self.ram_card.value_label.setText(f"{ram_percent:.0f}%")
 
-        gpu = self.nvidia.get_gpu_info()
+        gpu = self.graphics.preferred_gpu()
         if gpu.get("available"):
+            temperature = gpu.get("temperature")
+            power = gpu.get("power")
             self.gpu_card.value_label.setText(
-                f"{gpu['temperature']:.0f}°C"
+                f"{temperature:.0f}°C"
+                if isinstance(temperature, (int, float))
+                else "N/A"
             )
             self.gpu_power_card.value_label.setText(
-                f"{gpu['power']:.1f} W"
+                f"{power:.1f} W"
+                if isinstance(power, (int, float))
+                else "N/A"
             )
         else:
             self.gpu_card.value_label.setText("--")
             self.gpu_power_card.value_label.setText("N/A")
 
         profile = self.performance.current_profile()
-        self.profile_card.value_label.setText(
-            profile or "Unavailable"
-        )
+        self.profile_card.value_label.setText(profile or "Unavailable")
 
         battery = self.battery.status()
         if battery.get("available") and battery.get("capacity") is not None:
-            self.battery_card.value_label.setText(
-                f"{battery['capacity']}%"
-            )
+            self.battery_card.value_label.setText(f"{battery['capacity']}%")
             self.battery_card.subtitle_label.setText(
                 battery.get("state") or "Battery"
             )
         else:
             self.battery_card.value_label.setText("N/A")
+            self.battery_card.subtitle_label.setText("Battery")
 
-        freq_text = f"{cpu_freq / 1000:.2f} GHz" if cpu_freq else "N/A"
+        fan_status = self.fans.status()
+        fan_text = "Fans: unavailable"
+        fans = fan_status.get("fans") or []
+        if len(fans) >= 2:
+            fan_text = (
+                f"Fans: CPU {fans[0].get('rpm', 0)} RPM • "
+                f"GPU {fans[1].get('rpm', 0)} RPM"
+            )
+        elif len(fans) == 1:
+            fan_text = f"Fan: {fans[0].get('rpm', 0)} RPM"
+
+        freq_text = (
+            f"{cpu_freq / 1000:.2f} GHz"
+            if cpu_freq
+            else "N/A"
+        )
+
+        if gpu.get("available"):
+            vendor = str(gpu.get("vendor", "gpu")).upper()
+            gpu_name = gpu.get("name", vendor)
+            gpu_usage = gpu.get("usage")
+            gpu_usage_text = (
+                f"{gpu_usage:.0f}%"
+                if isinstance(gpu_usage, (int, float))
+                else "N/A"
+            )
+            gpu_text = (
+                f"{vendor} ({gpu_name}) • "
+                f"GPU usage: {gpu_usage_text}"
+            )
+        else:
+            gpu_text = "GPU telemetry unavailable"
+
         self.snapshot.setText(
             f"CPU usage: {cpu_usage:.0f}%   •   "
             f"CPU frequency: {freq_text}   •   "
             f"RAM: {used_gb:.1f} / {total_gb:.1f} GB   •   "
-            f"GPU usage: {gpu.get('usage', 0):.0f}%"
-            if gpu.get("available")
-            else
-            f"CPU usage: {cpu_usage:.0f}%   •   "
-            f"CPU frequency: {freq_text}   •   "
-            f"RAM: {used_gb:.1f} / {total_gb:.1f} GB   •   "
-            f"NVIDIA GPU: unavailable"
+            f"{gpu_text}   •   {fan_text}"
         )
 
 
@@ -402,7 +435,7 @@ class PerformancePage(QWidget):
 
 
 class GPUPage(QWidget):
-    def __init__(self, controller: NvidiaController):
+    def __init__(self, controller: GraphicsController):
         super().__init__()
         self.controller = controller
 
@@ -412,7 +445,7 @@ class GPUPage(QWidget):
 
         title, subtitle = page_header(
             "GPU",
-            "NVIDIA monitoring, power limit and PRIME mode",
+            "Real-time Intel/NVIDIA telemetry and supported controls",
         )
         layout.addWidget(title)
         layout.addWidget(subtitle)
@@ -440,6 +473,7 @@ class GPUPage(QWidget):
         self.power_spin = QDoubleSpinBox()
         self.power_spin.setDecimals(1)
         self.power_spin.setSuffix(" W")
+        self.power_spin.setEnabled(False)
 
         self.default_power = QLabel("--")
         power_form.addRow("Default:", self.default_power)
@@ -447,6 +481,7 @@ class GPUPage(QWidget):
 
         self.power_apply = QPushButton("Apply Power Limit")
         self.power_apply.clicked.connect(self.apply_power_limit)
+        self.power_apply.setEnabled(False)
         power_form.addRow("", self.power_apply)
 
         layout.addWidget(power_group)
@@ -466,7 +501,7 @@ class GPUPage(QWidget):
 
         layout.addWidget(prime_group)
 
-        self.status = QLabel("Reading NVIDIA state...")
+        self.status = QLabel("Reading GPU state...")
         self.status.setObjectName("info")
         self.status.setWordWrap(True)
         layout.addWidget(self.status)
@@ -475,39 +510,94 @@ class GPUPage(QWidget):
 
         self.timer = QTimer(self)
         self.timer.timeout.connect(self.refresh)
-        self.timer.start(2000)
+        self.timer.start(1000)
         self.refresh()
 
+    @staticmethod
+    def _text(value: object, suffix: str = "") -> str:
+        if isinstance(value, (int, float)):
+            return f"{value:.1f}{suffix}"
+        return "N/A"
+
     def refresh(self) -> None:
-        gpu = self.controller.get_gpu_info()
+        snapshot = self.controller.snapshot()
+        gpu = snapshot.get("selected") or {}
         limits = self.controller.get_power_limits()
-        mode = self.controller.prime_mode()
+        mode = snapshot.get("prime")
 
         if not gpu.get("available"):
-            reason = gpu.get("reason", "NVIDIA GPU unavailable.")
-            self.status.setText(reason)
-            return
-
-        self.temp_card.value_label.setText(f"{gpu['temperature']:.0f}°C")
-        self.usage_card.value_label.setText(f"{gpu['usage']:.0f}%")
-        self.power_card.value_label.setText(f"{gpu['power']:.1f} W")
-        self.vram_card.value_label.setText(
-            f"{gpu['memory_used']:.0f} / {gpu['memory_total']:.0f} MB"
-        )
-        self.clock_card.value_label.setText(
-            f"{gpu['graphics_clock']:.0f} MHz"
-        )
-        self.mode_card.value_label.setText(mode or "Unknown")
-
-        if limits.get("available"):
-            self.power_spin.setMinimum(limits["minimum"])
-            self.power_spin.setMaximum(limits["maximum"])
-            self.power_spin.setValue(gpu["power_limit"])
-            self.default_power.setText(f"{limits['default']:.1f} W")
-            self.power_apply.setEnabled(True)
-        else:
+            self.temp_card.value_label.setText("--")
+            self.usage_card.value_label.setText("--")
+            self.power_card.value_label.setText("--")
+            self.vram_card.value_label.setText("--")
+            self.clock_card.value_label.setText("--")
+            self.mode_card.value_label.setText(mode or "N/A")
+            reasons = []
+            for key in ("nvidia", "intel"):
+                info = snapshot.get(key) or {}
+                if not info.get("available") and info.get("reason"):
+                    reasons.append(str(info["reason"]))
+            self.status.setText(
+                "No live GPU telemetry source is available."
+                + (f" {' '.join(reasons)}" if reasons else "")
+            )
             self.power_apply.setEnabled(False)
-            self.default_power.setText("Unavailable")
+        else:
+            self.temp_card.value_label.setText(
+                self._text(gpu.get("temperature"), "°C")
+            )
+            self.usage_card.value_label.setText(
+                self._text(gpu.get("usage"), "%")
+            )
+            self.power_card.value_label.setText(
+                self._text(gpu.get("power"), " W")
+            )
+
+            used = gpu.get("memory_used")
+            total = gpu.get("memory_total")
+            if isinstance(used, (int, float)) and isinstance(total, (int, float)):
+                self.vram_card.value_label.setText(
+                    f"{used:.0f} / {total:.0f} MB"
+                )
+            else:
+                self.vram_card.value_label.setText("N/A")
+
+            clock = gpu.get("graphics_clock")
+            self.clock_card.value_label.setText(
+                f"{clock:.0f} MHz"
+                if isinstance(clock, (int, float))
+                else "N/A"
+            )
+
+            vendor = str(gpu.get("vendor", "gpu")).upper()
+            self.mode_card.value_label.setText(mode or "N/A")
+            self.status.setText(
+                f"{gpu.get('name', 'GPU')} detected • {vendor} telemetry"
+            )
+
+            if vendor == "NVIDIA" and limits.get("available"):
+                minimum = float(limits["minimum"])
+                maximum = float(limits["maximum"])
+                default = float(limits["default"])
+                current = gpu.get("power_limit")
+
+                self.power_spin.setMinimum(minimum)
+                self.power_spin.setMaximum(maximum)
+                self.power_spin.setValue(
+                    float(current)
+                    if isinstance(current, (int, float))
+                    else default
+                )
+                self.power_spin.setEnabled(True)
+                self.power_apply.setEnabled(True)
+                self.default_power.setText(f"{default:.1f} W")
+            else:
+                self.power_spin.setEnabled(False)
+                self.power_apply.setEnabled(False)
+                if vendor == "NVIDIA":
+                    self.default_power.setText("Unavailable")
+                else:
+                    self.default_power.setText("NVIDIA only")
 
         if mode:
             blocked = self.prime_combo.blockSignals(True)
@@ -515,8 +605,6 @@ class GPUPage(QWidget):
             if index >= 0:
                 self.prime_combo.setCurrentIndex(index)
             self.prime_combo.blockSignals(blocked)
-
-        self.status.setText(f"{gpu['name']} detected.")
 
     def apply_power_limit(self) -> None:
         watts = self.power_spin.value()
@@ -551,7 +639,7 @@ class GPUPage(QWidget):
 
 
 class FansPage(QWidget):
-    def __init__(self, controller: GigaCtlController):
+    def __init__(self, controller: FanController):
         super().__init__()
         self.controller = controller
 
@@ -561,119 +649,102 @@ class FansPage(QWidget):
 
         title, subtitle = page_header(
             "Fans",
-            "Manual fan control through the G6 KF gigactl backend",
+            "Real-time fan RPM and EC telemetry",
         )
         layout.addWidget(title)
         layout.addWidget(subtitle)
 
-        controls = QGroupBox("Manual Fan Duty")
-        form = QFormLayout(controls)
+        cards = QGridLayout()
+        self.cpu_fan_card = metric_card("CPU FAN", "--", "RPM")
+        self.gpu_fan_card = metric_card("GPU FAN", "--", "RPM")
+        self.cpu_duty_card = metric_card("CPU DUTY", "--", "EC duty")
+        self.gpu_duty_card = metric_card("GPU DUTY", "--", "EC duty")
 
-        self.cpu_slider = QSlider(Qt.Orientation.Horizontal)
-        self.cpu_slider.setRange(30, 100)
-        self.cpu_slider.setValue(60)
+        cards.addWidget(self.cpu_fan_card, 0, 0)
+        cards.addWidget(self.gpu_fan_card, 0, 1)
+        cards.addWidget(self.cpu_duty_card, 1, 0)
+        cards.addWidget(self.gpu_duty_card, 1, 1)
+        layout.addLayout(cards)
 
-        self.gpu_slider = QSlider(Qt.Orientation.Horizontal)
-        self.gpu_slider.setRange(30, 100)
-        self.gpu_slider.setValue(60)
+        info_group = QGroupBox("Fan Control")
+        info_layout = QVBoxLayout(info_group)
+        self.control_note = QLabel(
+            "Manual per-fan control is intentionally disabled. "
+            "On the G6 KF the EC behavior does not make independent fan "
+            "control useful enough to expose as a normal feature. "
+            "This build focuses on safe, live telemetry."
+        )
+        self.control_note.setWordWrap(True)
+        info_layout.addWidget(self.control_note)
+        layout.addWidget(info_group)
 
-        self.cpu_value = QLabel("60%")
-        self.gpu_value = QLabel("60%")
-
-        cpu_row = QHBoxLayout()
-        cpu_row.addWidget(self.cpu_slider)
-        cpu_row.addWidget(self.cpu_value)
-        form.addRow("CPU fan:", cpu_row)
-
-        gpu_row = QHBoxLayout()
-        gpu_row.addWidget(self.gpu_slider)
-        gpu_row.addWidget(self.gpu_value)
-        form.addRow("GPU fan:", gpu_row)
-
-        apply_button = QPushButton("Apply Fan Speed")
-        apply_button.clicked.connect(self.apply_manual)
-        form.addRow("", apply_button)
-
-        auto_button = QPushButton("Return to Firmware Auto")
-        auto_button.clicked.connect(self.apply_auto)
-        form.addRow("", auto_button)
-
-        layout.addWidget(controls)
-
-        preset_group = QGroupBox("Presets")
-        preset_layout = QHBoxLayout(preset_group)
-
-        for label, cpu, gpu in (
-            ("Quiet", 45, 45),
-            ("Balanced", 60, 60),
-            ("Performance", 70, 75),
-            ("Max", 100, 100),
-        ):
-            button = QPushButton(label)
-            button.clicked.connect(
-                lambda _=False, c=cpu, g=gpu: self.set_preset(c, g)
-            )
-            preset_layout.addWidget(button)
-
-        layout.addWidget(preset_group)
-
-        status_group = QGroupBox("EC Status")
+        status_group = QGroupBox("Native EC Status")
         status_layout = QVBoxLayout(status_group)
         self.output = QTextEdit()
         self.output.setReadOnly(True)
-        self.output.setMinimumHeight(180)
+        self.output.setMinimumHeight(150)
         status_layout.addWidget(self.output)
         layout.addWidget(status_group)
 
-        self.cpu_slider.valueChanged.connect(
-            lambda value: self.cpu_value.setText(f"{value}%")
-        )
-        self.gpu_slider.valueChanged.connect(
-            lambda value: self.gpu_value.setText(f"{value}%")
-        )
-
-        self.refresh_button = QPushButton("Refresh Status")
-        self.refresh_button.clicked.connect(self.refresh_status)
-        layout.addWidget(self.refresh_button, alignment=Qt.AlignmentFlag.AlignLeft)
-
         layout.addStretch()
+
+        self.timer = QTimer(self)
+        self.timer.timeout.connect(self.refresh_status)
+        self.timer.start(1000)
         self.refresh_status()
 
-    def set_preset(self, cpu: int, gpu: int) -> None:
-        self.cpu_slider.setValue(cpu)
-        self.gpu_slider.setValue(gpu)
-        self.apply_manual()
-
-    def apply_manual(self) -> None:
-        result = self.controller.set_fans(
-            self.cpu_slider.value(),
-            self.gpu_slider.value(),
-        )
-        if not result.ok:
-            show_error(self, result.stderr or "Unable to set fan speed.")
-            return
-        self.output.setPlainText(result.stdout or "Fan speed applied.")
-
-    def apply_auto(self) -> None:
-        result = self.controller.set_fans_auto()
-        if not result.ok:
-            show_error(self, result.stderr or "Unable to return fan control to auto.")
-            return
-        self.output.setPlainText(
-            result.stdout or "Firmware fan control restored."
-        )
-
     def refresh_status(self) -> None:
-        result = self.controller.fan_status()
-        self.output.setPlainText(
-            result.stdout
-            or result.stderr
-            or "gigactl is unavailable."
-        )
+        info = self.controller.status()
+        fans = info.get("fans") or []
+
+        if len(fans) >= 1:
+            fan = fans[0]
+            rpm = fan.get("rpm")
+            duty = fan.get("duty_percent")
+            self.cpu_fan_card.value_label.setText(
+                f"{int(rpm)}" if isinstance(rpm, (int, float)) else "N/A"
+            )
+            self.cpu_duty_card.value_label.setText(
+                f"{int(duty)}%"
+                if isinstance(duty, (int, float))
+                else "N/A"
+            )
+        else:
+            self.cpu_fan_card.value_label.setText("N/A")
+            self.cpu_duty_card.value_label.setText("N/A")
+
+        if len(fans) >= 2:
+            fan = fans[1]
+            rpm = fan.get("rpm")
+            duty = fan.get("duty_percent")
+            self.gpu_fan_card.value_label.setText(
+                f"{int(rpm)}" if isinstance(rpm, (int, float)) else "N/A"
+            )
+            self.gpu_duty_card.value_label.setText(
+                f"{int(duty)}%"
+                if isinstance(duty, (int, float))
+                else "N/A"
+            )
+        else:
+            self.gpu_fan_card.value_label.setText("N/A")
+            self.gpu_duty_card.value_label.setText("N/A")
+
+        if info.get("available"):
+            source = info.get("source", "native")
+            self.output.setPlainText(
+                f"Source: {source}\n"
+                f"EC telemetry: live\n"
+                f"Independent fan writes: disabled"
+            )
+        else:
+            self.output.setPlainText(
+                info.get("reason")
+                or "Native fan telemetry is unavailable."
+            )
 
 
 class RGBPage(QWidget):
-    def __init__(self, controller: GigaCtlController):
+    def __init__(self, controller: KeyboardController):
         super().__init__()
         self.controller = controller
         self.selected_color = "#00a2ff"
@@ -684,7 +755,7 @@ class RGBPage(QWidget):
 
         title, subtitle = page_header(
             "RGB Lighting",
-            "Single-zone keyboard backlight control",
+            "Native keyboard backend (EC RGB control is staged separately)",
         )
         layout.addWidget(title)
         layout.addWidget(subtitle)
@@ -841,19 +912,21 @@ class BatteryPage(QWidget):
 
         title, subtitle = page_header(
             "Battery",
-            "Battery health and charge-limit controls",
+            "Live battery, charging and charge-limit status",
         )
         layout.addWidget(title)
         layout.addWidget(subtitle)
 
         self.capacity_card = metric_card("CHARGE", "--", "Current")
-        self.health_card = metric_card("HEALTH", "--", "Estimated full/design")
+        self.health_card = metric_card("HEALTH", "--", "Full / design")
+        self.power_card = metric_card("POWER", "--", "Battery draw")
         self.limit_card = metric_card("LIMIT", "--", "Charge limit")
 
-        cards = QHBoxLayout()
-        cards.addWidget(self.capacity_card)
-        cards.addWidget(self.health_card)
-        cards.addWidget(self.limit_card)
+        cards = QGridLayout()
+        cards.addWidget(self.capacity_card, 0, 0)
+        cards.addWidget(self.health_card, 0, 1)
+        cards.addWidget(self.power_card, 0, 2)
+        cards.addWidget(self.limit_card, 1, 0)
         layout.addLayout(cards)
 
         group = QGroupBox("Charge Limit")
@@ -868,8 +941,15 @@ class BatteryPage(QWidget):
 
         form.addRow("Limit:", self.limit_combo)
         form.addRow("", self.apply_button)
-
         layout.addWidget(group)
+
+        status_group = QGroupBox("Battery Details")
+        status_layout = QVBoxLayout(status_group)
+        self.details = QTextEdit()
+        self.details.setReadOnly(True)
+        self.details.setMinimumHeight(150)
+        status_layout.addWidget(self.details)
+        layout.addWidget(status_group)
 
         self.status = QLabel("Reading battery...")
         self.status.setObjectName("info")
@@ -877,43 +957,98 @@ class BatteryPage(QWidget):
         layout.addWidget(self.status)
 
         layout.addStretch()
+
+        self.timer = QTimer(self)
+        self.timer.timeout.connect(self.refresh)
+        self.timer.start(1000)
         self.refresh()
+
+    @staticmethod
+    def _format_minutes(value: object) -> str:
+        if not isinstance(value, (int, float)):
+            return "N/A"
+        total = max(0, int(value))
+        hours, minutes = divmod(total, 60)
+        return f"{hours}h {minutes}m" if hours else f"{minutes}m"
 
     def refresh(self) -> None:
         info = self.controller.status()
+
         if not info.get("available"):
-            self.status.setText("No battery device detected.")
+            self.capacity_card.value_label.setText("N/A")
+            self.health_card.value_label.setText("N/A")
+            self.power_card.value_label.setText("N/A")
+            self.limit_card.value_label.setText("Unsupported")
             self.apply_button.setEnabled(False)
+            self.details.setPlainText(
+                info.get("reason") or "No battery device detected."
+            )
+            self.status.setText(
+                info.get("reason") or "No battery device detected."
+            )
             return
 
         capacity = info.get("capacity")
         health = info.get("health")
+        power = info.get("power_w")
         limit = info.get("charge_limit")
 
         self.capacity_card.value_label.setText(
-            f"{capacity}%" if capacity is not None else "N/A"
+            f"{capacity}%"
+            if isinstance(capacity, int)
+            else "N/A"
         )
         self.health_card.value_label.setText(
-            f"{health:.0f}%" if health is not None else "N/A"
+            f"{health:.0f}%"
+            if isinstance(health, (int, float))
+            else "N/A"
+        )
+        self.power_card.value_label.setText(
+            f"{power:.1f} W"
+            if isinstance(power, (int, float))
+            else "N/A"
         )
         self.limit_card.value_label.setText(
-            f"{limit}%" if limit is not None else "Unsupported"
+            f"{limit}%"
+            if isinstance(limit, int)
+            else "Unsupported"
         )
 
-        if limit is not None:
+        if isinstance(limit, int):
             index = self.limit_combo.findText(f"{limit}%")
             if index >= 0:
+                blocked = self.limit_combo.blockSignals(True)
                 self.limit_combo.setCurrentIndex(index)
+                self.limit_combo.blockSignals(blocked)
 
-        supported = self.controller.supports_limit()
+        supported = bool(info.get("supports_limit"))
         self.apply_button.setEnabled(supported)
+
+        charger = info.get("charger_connected")
+        charger_text = (
+            "Connected" if charger is True
+            else "Disconnected" if charger is False
+            else "Unknown"
+        )
+
+        voltage = info.get("voltage_v")
+        current = info.get("current_a")
+
+        lines = [
+            f"Device: {info.get('name', 'Battery')}",
+            f"State: {info.get('state') or 'Unknown'}",
+            f"Charger: {charger_text}",
+            f"Voltage: {voltage:.2f} V" if isinstance(voltage, (int, float)) else "Voltage: N/A",
+            f"Current: {current:.2f} A" if isinstance(current, (int, float)) else "Current: N/A",
+            f"Time estimate: {self._format_minutes(info.get('time_remaining_minutes'))}",
+        ]
+        self.details.setPlainText("\n".join(lines))
+
         self.status.setText(
-            f"{info['name']} • {info.get('state') or 'Unknown state'} • "
-            + (
-                "Charge limit is supported."
-                if supported
-                else "Charge limit is not exposed by this laptop/kernel."
-            )
+            "Charge-limit control is supported."
+            if supported
+            else "Live battery telemetry is available, but this laptop/kernel "
+                 "does not expose a writable charge-limit interface."
         )
 
     def apply_limit(self) -> None:
@@ -925,8 +1060,7 @@ class BatteryPage(QWidget):
             return
 
         self.status.setText(
-            f"Battery charge limit set to {value}%. "
-            "The firmware may apply the change after a short delay."
+            f"Battery charge limit requested: {value}%."
         )
         self.refresh()
 
@@ -935,8 +1069,9 @@ class SettingsPage(QWidget):
     def __init__(
         self,
         performance: PerformanceController,
-        gigactl: GigaCtlController,
-        nvidia: NvidiaController,
+        fans: FanController,
+        graphics: GraphicsController,
+        keyboard: KeyboardController,
     ):
         super().__init__()
 
@@ -947,7 +1082,7 @@ class SettingsPage(QWidget):
 
         title, subtitle = page_header(
             "Settings",
-            "System information, dependencies and project status",
+            "System information, backend health and hardware status",
         )
         layout.addWidget(title)
         layout.addWidget(subtitle)
@@ -960,24 +1095,40 @@ class SettingsPage(QWidget):
         form.addRow("Platform:", QLabel(system["platform"]))
         layout.addWidget(system_group)
 
-        deps_group = QGroupBox("Backend Availability")
+        deps_group = QGroupBox("Native Backend Availability")
         deps = QFormLayout(deps_group)
-        deps.addRow("Power profiles:", QLabel(
-            "Available" if performance.available else "Unavailable"
-        ))
-        deps.addRow("gigactl:", QLabel(
-            "Detected" if gigactl.available else "Not detected"
-        ))
-        deps.addRow("NVIDIA:", QLabel(
-            "Detected" if nvidia.command else "nvidia-smi not found"
-        ))
+        graphics_snapshot = graphics.snapshot()
+        nvidia = graphics_snapshot.get("nvidia") or {}
+        intel = graphics_snapshot.get("intel") or {}
+
+        deps.addRow(
+            "Power profiles:",
+            QLabel("Available" if performance.available else "Unavailable"),
+        )
+        deps.addRow(
+            "Native EC telemetry:",
+            QLabel("Available" if fans.available else "Unavailable"),
+        )
+        deps.addRow(
+            "NVIDIA:",
+            QLabel("Detected" if nvidia.get("available") else "Unavailable"),
+        )
+        deps.addRow(
+            "Intel GPU:",
+            QLabel("Detected" if intel.get("available") else "Unavailable"),
+        )
+        deps.addRow(
+            "Native keyboard backend:",
+            QLabel("Ready" if keyboard.available else "Staged / not enabled"),
+        )
         layout.addWidget(deps_group)
 
         safety = QLabel(
-            "Hardware safety: G6-specific EC writes are delegated to gigactl. "
-            "This application does not write Gigabyte/Clevo EC registers directly. "
-            "CPU/GPU power changes are limited to interfaces exposed by Linux "
-            "or NVIDIA and are validated against reported ranges."
+            "Hardware boundary: this build does not use gigactl. "
+            "The native fan backend is read-only and obtains G6 KF fan "
+            "telemetry from the Linux EC interface through a small root-owned "
+            "telemetry service. CPU and NVIDIA power controls still use "
+            "standard Linux/NVIDIA interfaces and validate driver-reported ranges."
         )
         safety.setObjectName("info")
         safety.setWordWrap(True)
@@ -992,3 +1143,5 @@ class SettingsPage(QWidget):
         layout.addWidget(project)
 
         layout.addStretch()
+
+
