@@ -16,8 +16,9 @@ from PySide6.QtWidgets import (
 )
 
 from app.backend.battery import BatteryController
-from app.backend.gigactl import GigaCtlController
-from app.backend.nvidia import NvidiaController
+from app.backend.fans import FanController
+from app.backend.graphics import GraphicsController
+from app.backend.keyboard import KeyboardController
 from app.backend.performance import PerformanceController
 from app.ui.pages import (
     BatteryPage,
@@ -205,8 +206,9 @@ class MainWindow(QMainWindow):
         self.setMinimumSize(980, 650)
 
         self.performance = PerformanceController()
-        self.nvidia = NvidiaController()
-        self.gigactl = GigaCtlController()
+        self.graphics = GraphicsController()
+        self.fans = FanController()
+        self.keyboard = KeyboardController()
         self.battery = BatteryController()
 
         central = QWidget()
@@ -224,18 +226,19 @@ class MainWindow(QMainWindow):
             DashboardPage(
                 self.performance,
                 self.battery,
-                self.gigactl,
-                self.nvidia,
+                self.fans,
+                self.graphics,
             ),
             PerformancePage(self.performance),
-            GPUPage(self.nvidia),
-            FansPage(self.gigactl),
-            RGBPage(self.gigactl),
+            GPUPage(self.graphics),
+            FansPage(self.fans),
+            RGBPage(self.keyboard),
             BatteryPage(self.battery),
             SettingsPage(
                 self.performance,
-                self.gigactl,
-                self.nvidia,
+                self.fans,
+                self.graphics,
+                self.keyboard,
             ),
         ]
 
