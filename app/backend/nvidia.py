@@ -161,35 +161,6 @@ class NvidiaController:
             "maximum": maximum,
         }
 
-    def set_power_limit(self, watts: float) -> tuple[bool, str]:
-        limits = self.get_power_limits()
-        if not limits.get("available"):
-            return False, limits.get(
-                "reason",
-                "NVIDIA power-limit range is unavailable.",
-            )
-
-        minimum = float(limits["minimum"])
-        maximum = float(limits["maximum"])
-
-        if not minimum <= watts <= maximum:
-            return (
-                False,
-                f"Choose a limit between {minimum:.0f} W and {maximum:.0f} W.",
-            )
-
-        direct = self._run(
-            ["--power-limit", f"{watts:.1f}"],
-            timeout=5.0,
-        )
-        if direct is not None and direct.returncode == 0:
-            return True, direct.stdout.strip()
-
-        privileged = run_privileged(
-            ["gpu-power-limit", f"{watts:.1f}"],
-            timeout=10,
-        )
-        return privileged.ok, privileged.stderr or privileged.stdout
 
     def prime_mode(self) -> str | None:
         if not self.prime_select:
@@ -243,8 +214,6 @@ def get_power_limits() -> dict[str, Any]:
     return _controller.get_power_limits()
 
 
-def set_power_limit(watts: float) -> tuple[bool, str]:
-    return _controller.set_power_limit(watts)
 
 
 def prime_mode() -> str | None:
