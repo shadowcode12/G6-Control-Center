@@ -121,6 +121,14 @@ class BatteryController:
         end_path = self._find_file(base, END_THRESHOLD_FILES)
         charge_type = self._read(base / CHARGE_TYPE_FILE)
 
+        driver_name = None
+        try:
+            driver_link = base.joinpath("device", "driver")
+            if driver_link.exists():
+                driver_name = driver_link.resolve().name
+        except OSError:
+            driver_name = None
+
         try:
             start = int(float(self._read(start_path))) if start_path else None
         except (TypeError, ValueError):
@@ -171,6 +179,7 @@ class BatteryController:
             "energy_full": energy_full,
             "energy_design": energy_design,
             "charge_type": charge_type,
+            "driver": driver_name,
             "charge_limit": end,
             "charge_start": start,
             "supports_limit": end_only_supported,
@@ -190,6 +199,16 @@ class BatteryController:
             and self._find_file(base, START_THRESHOLD_FILES)
             and self._find_file(base, END_THRESHOLD_FILES)
         )
+
+    def set_full_charge(self) -> tuple[bool, str]:
+        base = self._battery_dir()
+        if base is None:
+            return False, "No battery device detected."
+        end_path = self._find_file(base, END_THRESHOLD_FILES)
+        if end_path is None:
+            return False, "Full-charge control is not exposed by the Linux battery driver."
+        result = run_privileged(["battery-full-charge"], timeout=10)
+        return result.ok, result.stderr or result.stdout
 
     def set_limit(self, percent: int, start_percent: int | None = None) -> tuple[bool, str]:
         base = self._battery_dir()
