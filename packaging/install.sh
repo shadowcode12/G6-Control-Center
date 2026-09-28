@@ -35,6 +35,7 @@ EOF
 sudo chmod 0755 "${BIN}"
 sudo install -m 0644 "${ROOT}/assets/g6-control-center.desktop" /usr/share/applications/g6-control-center.desktop
 if [ -f "${ROOT}/assets/g6-control-center.svg" ]; then
+  sudo install -d /usr/share/icons/hicolor/scalable/apps
   sudo install -m 0644 "${ROOT}/assets/g6-control-center.svg" /usr/share/icons/hicolor/scalable/apps/g6-control-center.svg
 fi
 
