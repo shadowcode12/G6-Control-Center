@@ -29,6 +29,9 @@ CLEVO_END_VALUES = (60, 70, 80, 90, 100)
 class BatteryController:
     """Live Linux battery telemetry and threshold control."""
 
+    CLEVO_START_VALUES = CLEVO_START_VALUES
+    CLEVO_END_VALUES = CLEVO_END_VALUES
+
     def _battery_dir(self) -> Path | None:
         batteries = sorted(glob.glob("/sys/class/power_supply/BAT*"))
         return Path(batteries[0]) if batteries else None
