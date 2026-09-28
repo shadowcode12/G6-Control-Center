@@ -7,7 +7,8 @@ ConditionPathExists=/sys/kernel/debug
 Type=simple
 
 # ec_sys is a kernel module; loading an already-loaded module is harmless.
-ExecStartPre=/usr/sbin/modprobe ec_sys
+ExecStartPre=/bin/sh -c '/usr/sbin/modprobe ec_sys'
+ExecStartPre=/bin/sh -c '/usr/sbin/modprobe clevo_acpi >/dev/null 2>&1 || true'
 ExecStart=/opt/g6-control-center/venv/bin/python -m app.services.telemetry_daemon
 
 Restart=on-failure
