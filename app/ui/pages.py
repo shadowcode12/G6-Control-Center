@@ -947,9 +947,9 @@ class RGBPage(QWidget):
 
         self.keyboard_frame = QFrame()
         self.keyboard_frame.setObjectName("keyboardFrame")
-        keyboard_layout = QVBoxLayout(self.keyboard_frame)
+        keyboard_layout = QHBoxLayout(self.keyboard_frame)
         keyboard_layout.setContentsMargins(14, 14, 14, 14)
-        keyboard_layout.setSpacing(5)
+        keyboard_layout.setSpacing(10)
 
         self.key_widgets: list[QPushButton] = []
         self._build_keyboard_layout(keyboard_layout)
@@ -1050,76 +1050,74 @@ class RGBPage(QWidget):
     def _rgb_hex(r: int, g: int, b: int) -> str:
         return f"#{r:02x}{g:02x}{b:02x}"
 
-    def _build_keyboard_layout(self, parent: QVBoxLayout) -> None:
+    def _build_keyboard_layout(self, parent: QHBoxLayout) -> None:
+        main = QVBoxLayout()
+        main.setSpacing(4)
+
         rows = [
-            (
-                ["Esc", "F1", "F2", "F3", "F4", "F5", "F6", "F7", "F8", "F9", "F10", "F11", "F12"],
-                [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
-            ),
-            (
-                ["~", "1", "2", "3", "4", "5", "6", "7", "8", "9", "0", "-", "=", "Backspace"],
-                [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 2],
-            ),
-            (
-                ["Tab", "Q", "W", "E", "R", "T", "Y", "U", "I", "O", "P", "[", "]", "\", "Ins"],
-                [1.5, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1.5, 1],
-            ),
-            (
-                ["Caps", "A", "S", "D", "F", "G", "H", "J", "K", "L", ";", "'", "Enter"],
-                [1.7, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 2.2],
-            ),
-            (
-                ["Shift", "Z", "X", "C", "V", "B", "N", "M", ",", ".", "/", "Shift"],
-                [2.2, 1, 1, 1, 1, 1, 1, 1, 1, 1, 2.2, 2.6],
-            ),
-            (
-                ["Ctrl", "Fn", "Win", "Alt", "Space", "Alt", "Menu", "Ctrl", "←", "↓", "↑", "→"],
-                [1.2, 1.1, 1.2, 1.2, 5.5, 1.2, 1.2, 1.2, 1, 1, 1, 1],
-            ),
+            ["Esc", "F1", "F2", "F3", "F4", "F5", "F6", "F7", "F8", "F9", "F10", "F11", "F12"],
+            ["~", "1", "2", "3", "4", "5", "6", "7", "8", "9", "0", "-", "=", "Backspace"],
+            ["Tab", "Q", "W", "E", "R", "T", "Y", "U", "I", "O", "P", "[", "]", "\\", "Ins"],
+            ["Caps", "A", "S", "D", "F", "G", "H", "J", "K", "L", ";", "'", "Enter"],
+            ["Shift", "Z", "X", "C", "V", "B", "N", "M", ",", ".", "/", "Shift"],
+            ["Ctrl", "Fn", "Win", "Alt", "Space", "Alt", "Menu", "Ctrl", "←", "↓", "↑", "→"],
         ]
 
-        row_box = QVBoxLayout()
-        row_box.setSpacing(5)
-
-        rows_layouts: list[QHBoxLayout] = []
-        for labels, stretches in rows:
+        for labels in rows:
             row = QHBoxLayout()
-            row.setSpacing(5)
-
-            for label, stretch in zip(labels, stretches):
+            row.setSpacing(3)
+            for label in labels:
                 key = QPushButton(label)
                 key.setEnabled(False)
-                key.setFixedHeight(34)
-                key.setMinimumWidth(30)
+                key.setFixedHeight(28)
+                key.setMinimumWidth(24)
+                stretch = 2 if label in {
+                    "Backspace", "Enter", "Shift", "Tab", "Caps", "Space"
+                } else 1
                 row.addWidget(key, stretch)
                 self.key_widgets.append(key)
+            main.addLayout(row)
 
-            rows_layouts.append(row)
-            parent.addLayout(row)
+        parent.addLayout(main, 5)
 
-        # Numeric keypad.
         numpad = QGridLayout()
-        numpad.setHorizontalSpacing(5)
-        numpad.setVerticalSpacing(5)
+        numpad.setHorizontalSpacing(3)
+        numpad.setVerticalSpacing(3)
 
-        numpad_values = [
-            ["Num", "/", "*", "-"],
-            ["7", "8", "9", "+"],
-            ["4", "5", "6", "+"],
-            ["1", "2", "3", "Enter"],
-            ["0", ".", "Enter", "Enter"],
+        cells = [
+            ("Num", 0, 0, 1, 1),
+            ("/", 0, 1, 1, 1),
+            ("*", 0, 2, 1, 1),
+            ("-", 0, 3, 1, 1),
+            ("7", 1, 0, 1, 1),
+            ("8", 1, 1, 1, 1),
+            ("9", 1, 2, 1, 1),
+            ("+", 1, 3, 2, 1),
+            ("4", 2, 0, 1, 1),
+            ("5", 2, 1, 1, 1),
+            ("6", 2, 2, 1, 1),
+            ("1", 3, 0, 1, 1),
+            ("2", 3, 1, 1, 1),
+            ("3", 3, 2, 1, 1),
+            ("Enter", 3, 3, 2, 1),
+            ("0", 5, 0, 1, 2),
+            (".", 5, 2, 1, 1),
         ]
 
-        for r_index, line in enumerate(numpad_values):
-            for c_index, label in enumerate(line):
-                key = QPushButton(label)
-                key.setEnabled(False)
-                key.setFixedHeight(34)
-                numpad.addWidget(key, r_index, c_index)
-                self.key_widgets.append(key)
+        for label, row_index, column, row_span, column_span in cells:
+            key = QPushButton(label)
+            key.setEnabled(False)
+            key.setFixedHeight(28)
+            numpad.addWidget(
+                key,
+                row_index,
+                column,
+                row_span,
+                column_span,
+            )
+            self.key_widgets.append(key)
 
-        parent.addSpacing(4)
-        parent.addLayout(numpad)
+        parent.addLayout(numpad, 1)
         self._refresh_key_styles()
 
     def _refresh_key_styles(self) -> None:
@@ -1399,6 +1397,9 @@ class BatteryPage(QWidget):
             ):
                 card.value_label.setText("N/A")
 
+            self.mode_combo.setEnabled(False)
+            self.start_combo.setEnabled(False)
+            self.stop_combo.setEnabled(False)
             self.apply_button.setEnabled(False)
             self.capability_label.setText(
                 info.get("reason")
@@ -1480,9 +1481,10 @@ class BatteryPage(QWidget):
         supports_end = bool(info.get("supports_limit"))
         supports_custom = bool(info.get("supports_custom"))
 
-        self.apply_button.setEnabled(
-            supports_end or supports_custom
-        )
+        self.mode_combo.setEnabled(supports_end)
+        self.start_combo.setEnabled(supports_custom)
+        self.stop_combo.setEnabled(supports_custom)
+        self.apply_button.setEnabled(supports_end)
 
         if supports_end:
             if stop == 100:
