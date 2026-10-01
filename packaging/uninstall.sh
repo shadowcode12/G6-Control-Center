@@ -5,6 +5,7 @@ echo "Removing G6 Control Center..."
 sudo systemctl disable --now g6-control-center-keyboard.service 2>/dev/null || true
 sudo systemctl disable --now g6-control-center-telemetry.service 2>/dev/null || true
 sudo rm -f /etc/systemd/system/g6-control-center-keyboard.service
+sudo rm -f /etc/modprobe.d/g6-control-center-ec.conf
 sudo rm -f /etc/systemd/system/g6-control-center-telemetry.service
 sudo systemctl daemon-reload
 
