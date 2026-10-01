@@ -11,12 +11,7 @@ STATE_FILE = Path("/var/lib/g6-control-center/keyboard.json")
 
 
 class KeyboardController:
-    """
-    Native G6 KF single-zone RGB keyboard backend.
-
-    The G6 KF uses the Clevo EC keyboard mailbox. This controller never calls
-    gigactl or any third-party keyboard CLI.
-    """
+    """Native single-zone RGB keyboard backend for the verified G6 KF."""
 
     PRESETS = {
         "Blue": (0, 0, 255),
@@ -32,7 +27,7 @@ class KeyboardController:
 
     def _read_state(self) -> dict[str, Any]:
         try:
-            state = json.loads(
+            raw = json.loads(
                 STATE_FILE.read_text(encoding="utf-8")
             )
         except (
@@ -41,7 +36,21 @@ class KeyboardController:
             OSError,
             json.JSONDecodeError,
         ):
-            state = {
+            raw = {}
+
+        try:
+            return {
+                "enabled": bool(raw.get("enabled", True)),
+                "r": max(0, min(255, int(raw.get("r", 0)))),
+                "g": max(0, min(255, int(raw.get("g", 0)))),
+                "b": max(0, min(255, int(raw.get("b", 255)))),
+                "brightness": max(
+                    0,
+                    min(100, int(raw.get("brightness", 100))),
+                ),
+            }
+        except (TypeError, ValueError):
+            return {
                 "enabled": True,
                 "r": 0,
                 "g": 0,
@@ -49,71 +58,61 @@ class KeyboardController:
                 "brightness": 100,
             }
 
-        return {
-            "enabled": bool(state.get("enabled", True)),
-            "r": max(0, min(255, int(state.get("r", 0)))),
-            "g": max(0, min(255, int(state.get("g", 0)))),
-            "b": max(0, min(255, int(state.get("b", 255)))),
-            "brightness": max(
-                0,
-                min(100, int(state.get("brightness", 100))),
-            ),
-        }
-
-    @property
-    def available(self) -> bool:
-        """The write backend is available only on a verified G6 KF."""
-        return self._is_g6_kf()
-
     @staticmethod
-    def _is_g6_kf() -> bool:
+    def _dmi_value(name: str) -> str:
         try:
-            vendor = Path(
-                "/sys/class/dmi/id/sys_vendor"
+            return Path(
+                f"/sys/class/dmi/id/{name}"
             ).read_text(
                 encoding="utf-8",
                 errors="ignore",
             ).strip()
+        except OSError:
+            return ""
 
-            model = Path(
-                "/sys/class/dmi/id/product_name"
-            ).read_text(
-                encoding="utf-8",
-                errors="ignore",
-            ).strip()
+    @classmethod
+    def _is_g6_kf(cls) -> bool:
+        return (
+            cls._dmi_value("sys_vendor").lower().startswith("gigabyte")
+            and cls._dmi_value("product_name") == "G6 KF"
+        )
 
-            return (
-                vendor.lower().startswith("gigabyte")
-                and model == "G6 KF"
-            )
+    @classmethod
+    def _ec_ready(cls) -> bool:
+        if not Path("/sys/kernel/debug/ec/ec0/io").exists():
+            return False
+
+        try:
+            support = Path(
+                "/sys/module/ec_sys/parameters/write_support"
+            ).read_text(encoding="utf-8").strip().upper()
         except OSError:
             return False
 
+        return support in {"Y", "1"}
+
+    @property
+    def available(self) -> bool:
+        return self._is_g6_kf() and self._ec_ready()
+
     def state(self) -> dict[str, Any]:
         state = self._read_state()
-        state["available"] = self.available
-        state["single_zone"] = True
-        state["model"] = "Gigabyte G6 KF"
+        state.update(
+            {
+                "available": self.available,
+                "single_zone": True,
+                "model": "Gigabyte G6 KF",
+            }
+        )
         return state
 
     @staticmethod
-    def _result(result) -> tuple[bool, str]:
-        return (
-            result.ok,
-            result.stderr or result.stdout,
-        )
+    def _message(result) -> str:
+        return result.stderr or result.stdout or ""
 
-    def set_color(
-        self,
-        r: int,
-        g: int,
-        b: int,
-    ) -> tuple[bool, str]:
-        if not self.available:
-            return (
-                False,
-                "Native RGB control is hardware-validated only on Gigabyte G6 KF.",
-            )
+    def set_color(self, r: int, g: int, b: int) -> tuple[bool, str]:
+        if not self._is_g6_kf():
+            return False, "Native RGB control is currently validated only on G6 KF."
 
         result = run_privileged(
             [
@@ -124,17 +123,11 @@ class KeyboardController:
             ],
             timeout=10,
         )
-        return self._result(result)
+        return result.ok, self._message(result)
 
-    def set_brightness(
-        self,
-        percent: int,
-    ) -> tuple[bool, str]:
-        if not self.available:
-            return (
-                False,
-                "Native RGB control is hardware-validated only on Gigabyte G6 KF.",
-            )
+    def set_brightness(self, percent: int) -> tuple[bool, str]:
+        if not self._is_g6_kf():
+            return False, "Native RGB control is currently validated only on G6 KF."
 
         result = run_privileged(
             [
@@ -143,17 +136,11 @@ class KeyboardController:
             ],
             timeout=10,
         )
-        return self._result(result)
+        return result.ok, self._message(result)
 
-    def set_enabled(
-        self,
-        enabled: bool,
-    ) -> tuple[bool, str]:
-        if not self.available:
-            return (
-                False,
-                "Native RGB control is hardware-validated only on Gigabyte G6 KF.",
-            )
+    def set_enabled(self, enabled: bool) -> tuple[bool, str]:
+        if not self._is_g6_kf():
+            return False, "Native RGB control is currently validated only on G6 KF."
 
         result = run_privileged(
             [
@@ -162,4 +149,4 @@ class KeyboardController:
             ],
             timeout=10,
         )
-        return self._result(result)
+        return result.ok, self._message(result)
