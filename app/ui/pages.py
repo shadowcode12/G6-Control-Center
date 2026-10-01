@@ -923,7 +923,13 @@ class RGBPage(QWidget):
     def __init__(self, controller: KeyboardController):
         super().__init__()
         self.controller = controller
-        self.selected_color = "#00a2ff"
+        state = self.controller.state()
+
+        self.selected_color = self._rgb_hex(
+            state["r"],
+            state["g"],
+            state["b"],
+        )
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(30, 30, 30, 30)
@@ -931,98 +937,219 @@ class RGBPage(QWidget):
 
         title, subtitle = page_header(
             "RGB Lighting",
-            "Native keyboard backend (EC RGB control is staged separately)",
+            "Single-zone keyboard lighting for the Gigabyte G6 KF",
         )
         layout.addWidget(title)
         layout.addWidget(subtitle)
 
-        color_group = QGroupBox("Keyboard Color")
+        preview_group = QGroupBox("Keyboard Preview")
+        preview_layout = QVBoxLayout(preview_group)
+
+        self.keyboard_frame = QFrame()
+        self.keyboard_frame.setObjectName("keyboardFrame")
+        keyboard_layout = QVBoxLayout(self.keyboard_frame)
+        keyboard_layout.setContentsMargins(14, 14, 14, 14)
+        keyboard_layout.setSpacing(5)
+
+        self.key_widgets: list[QPushButton] = []
+        self._build_keyboard_layout(keyboard_layout)
+
+        preview_layout.addWidget(self.keyboard_frame)
+        layout.addWidget(preview_group)
+
+        color_group = QGroupBox("Color")
         color_layout = QHBoxLayout(color_group)
 
         self.color_preview = QFrame()
-        self.color_preview.setFixedSize(48, 48)
-        self.update_preview()
+        self.color_preview.setFixedSize(52, 52)
 
-        color_button = QPushButton("Choose Color")
-        color_button.clicked.connect(self.choose_color)
+        self.hex_label = QLabel(self.selected_color.upper())
+        self.hex_label.setMinimumWidth(90)
 
-        self.hex_label = QLabel(self.selected_color)
+        choose_button = QPushButton("Choose Color")
+        choose_button.clicked.connect(self.choose_color)
 
         color_layout.addWidget(self.color_preview)
         color_layout.addWidget(self.hex_label)
-        color_layout.addWidget(color_button)
+        color_layout.addWidget(choose_button)
         color_layout.addStretch()
 
         layout.addWidget(color_group)
 
-        presets = QGroupBox("Presets")
-        preset_layout = QHBoxLayout(presets)
-        for name, value in (
-            ("Red", "#ff0000"),
-            ("Blue", "#008cff"),
-            ("Green", "#00d26a"),
-            ("Purple", "#a855f7"),
-            ("White", "#ffffff"),
-            ("Orange", "#ff7a18"),
+        presets_group = QGroupBox("Presets")
+        presets = QGridLayout(presets_group)
+
+        for index, (name, rgb) in enumerate(
+            self.controller.PRESETS.items()
         ):
             button = QPushButton(name)
             button.clicked.connect(
-                lambda _=False, color=value: self.set_color(color)
+                lambda _=False, value=rgb: self.set_rgb(*value)
             )
-            preset_layout.addWidget(button)
+            button.setMinimumHeight(40)
+            presets.addWidget(
+                button,
+                index // 5,
+                index % 5,
+            )
 
-        layout.addWidget(presets)
+        layout.addWidget(presets_group)
 
         brightness_group = QGroupBox("Brightness")
         brightness_layout = QHBoxLayout(brightness_group)
 
         self.brightness = QSlider(Qt.Orientation.Horizontal)
         self.brightness.setRange(0, 100)
-        self.brightness.setValue(80)
+        self.brightness.setValue(state["brightness"])
 
-        self.brightness_label = QLabel("80%")
+        self.brightness_label = QLabel(f"{state['brightness']}%")
         self.brightness.valueChanged.connect(
             lambda value: self.brightness_label.setText(f"{value}%")
         )
 
+        brightness_apply = QPushButton("Apply")
+        brightness_apply.clicked.connect(self.apply_brightness)
+
         brightness_layout.addWidget(self.brightness)
         brightness_layout.addWidget(self.brightness_label)
-
-        apply_brightness = QPushButton("Apply")
-        apply_brightness.clicked.connect(self.apply_brightness)
-        brightness_layout.addWidget(apply_brightness)
+        brightness_layout.addWidget(brightness_apply)
 
         layout.addWidget(brightness_group)
 
-        actions = QHBoxLayout()
-        on_button = QPushButton("Keyboard ON")
-        on_button.clicked.connect(self.turn_on)
-        off_button = QPushButton("Keyboard OFF")
-        off_button.clicked.connect(self.turn_off)
+        actions_group = QGroupBox("Keyboard")
+        actions = QHBoxLayout(actions_group)
+
+        self.power_button = QPushButton(
+            "Turn OFF" if state["enabled"] else "Turn ON"
+        )
+        self.power_button.clicked.connect(self.toggle_keyboard)
+
         apply_color = QPushButton("Apply Color")
         apply_color.clicked.connect(self.apply_color)
 
         actions.addWidget(apply_color)
-        actions.addWidget(on_button)
-        actions.addWidget(off_button)
+        actions.addWidget(self.power_button)
         actions.addStretch()
 
-        layout.addLayout(actions)
+        layout.addWidget(actions_group)
 
-        self.output = QTextEdit()
-        self.output.setReadOnly(True)
-        self.output.setMinimumHeight(140)
-        layout.addWidget(self.output)
+        self.status = QLabel(
+            "Native RGB backend ready."
+            if self.controller.available
+            else "Native RGB backend is not available."
+        )
+        self.status.setObjectName("info")
+        self.status.setWordWrap(True)
+        layout.addWidget(self.status)
 
         layout.addStretch()
+
         self.refresh_status()
 
-    def update_preview(self) -> None:
+    @staticmethod
+    def _rgb_hex(r: int, g: int, b: int) -> str:
+        return f"#{r:02x}{g:02x}{b:02x}"
+
+    def _build_keyboard_layout(self, parent: QVBoxLayout) -> None:
+        rows = [
+            (
+                ["Esc", "F1", "F2", "F3", "F4", "F5", "F6", "F7", "F8", "F9", "F10", "F11", "F12"],
+                [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
+            ),
+            (
+                ["~", "1", "2", "3", "4", "5", "6", "7", "8", "9", "0", "-", "=", "Backspace"],
+                [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 2],
+            ),
+            (
+                ["Tab", "Q", "W", "E", "R", "T", "Y", "U", "I", "O", "P", "[", "]", "\", "Ins"],
+                [1.5, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1.5, 1],
+            ),
+            (
+                ["Caps", "A", "S", "D", "F", "G", "H", "J", "K", "L", ";", "'", "Enter"],
+                [1.7, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 2.2],
+            ),
+            (
+                ["Shift", "Z", "X", "C", "V", "B", "N", "M", ",", ".", "/", "Shift"],
+                [2.2, 1, 1, 1, 1, 1, 1, 1, 1, 1, 2.2, 2.6],
+            ),
+            (
+                ["Ctrl", "Fn", "Win", "Alt", "Space", "Alt", "Menu", "Ctrl", "←", "↓", "↑", "→"],
+                [1.2, 1.1, 1.2, 1.2, 5.5, 1.2, 1.2, 1.2, 1, 1, 1, 1],
+            ),
+        ]
+
+        row_box = QVBoxLayout()
+        row_box.setSpacing(5)
+
+        rows_layouts: list[QHBoxLayout] = []
+        for labels, stretches in rows:
+            row = QHBoxLayout()
+            row.setSpacing(5)
+
+            for label, stretch in zip(labels, stretches):
+                key = QPushButton(label)
+                key.setEnabled(False)
+                key.setFixedHeight(34)
+                key.setMinimumWidth(30)
+                row.addWidget(key, stretch)
+                self.key_widgets.append(key)
+
+            rows_layouts.append(row)
+            parent.addLayout(row)
+
+        # Numeric keypad.
+        numpad = QGridLayout()
+        numpad.setHorizontalSpacing(5)
+        numpad.setVerticalSpacing(5)
+
+        numpad_values = [
+            ["Num", "/", "*", "-"],
+            ["7", "8", "9", "+"],
+            ["4", "5", "6", "+"],
+            ["1", "2", "3", "Enter"],
+            ["0", ".", "Enter", "Enter"],
+        ]
+
+        for r_index, line in enumerate(numpad_values):
+            for c_index, label in enumerate(line):
+                key = QPushButton(label)
+                key.setEnabled(False)
+                key.setFixedHeight(34)
+                numpad.addWidget(key, r_index, c_index)
+                self.key_widgets.append(key)
+
+        parent.addSpacing(4)
+        parent.addLayout(numpad)
+        self._refresh_key_styles()
+
+    def _refresh_key_styles(self) -> None:
+        color = self.selected_color
+        for key in self.key_widgets:
+            key.setStyleSheet(
+                f"""
+                QPushButton {{
+                    background: #171c26;
+                    border: 1px solid #303747;
+                    border-radius: 5px;
+                    color: #cfd5df;
+                    padding: 4px 6px;
+                }}
+                QPushButton:disabled {{
+                    background: {color};
+                    color: white;
+                    border: 1px solid {color};
+                }}
+                """
+            )
+
         self.color_preview.setStyleSheet(
-            f"QFrame {{ background: {self.selected_color}; "
-            "border-radius: 8px; border: 1px solid #3a4150; }}"
+            f"QFrame {{
+                background: {color};
+                border-radius: 10px;
+                border: 1px solid {color};
+            }}"
         )
-        self.hex_label.setText(self.selected_color)
+        self.hex_label.setText(color.upper())
 
     def choose_color(self) -> None:
         color = QColorDialog.getColor(
@@ -1035,46 +1162,94 @@ class RGBPage(QWidget):
 
     def set_color(self, color: str) -> None:
         self.selected_color = color.lower()
-        self.update_preview()
+        self._refresh_key_styles()
+
+    def set_rgb(self, r: int, g: int, b: int) -> None:
+        self.set_color(self._rgb_hex(r, g, b))
         self.apply_color()
 
-    def apply_color(self) -> None:
-        result = self.controller.keyboard_color(self.selected_color)
-        self.output.setPlainText(
-            result.stdout
-            or result.stderr
-            or ("Color applied." if result.ok else "Unable to apply color.")
+    def _selected_rgb(self) -> tuple[int, int, int]:
+        value = self.selected_color.lstrip("#")
+        return (
+            int(value[0:2], 16),
+            int(value[2:4], 16),
+            int(value[4:6], 16),
         )
+
+    def apply_color(self) -> None:
+        r, g, b = self._selected_rgb()
+        ok, message = self.controller.set_color(r, g, b)
+
+        if not ok:
+            self.status.setText(
+                message or "Unable to apply keyboard color."
+            )
+            return
+
+        self.status.setText(
+            f"Keyboard color applied: {self.selected_color.upper()}"
+        )
+        self.refresh_status()
 
     def apply_brightness(self) -> None:
-        result = self.controller.keyboard_brightness(
+        ok, message = self.controller.set_brightness(
             self.brightness.value()
         )
-        self.output.setPlainText(
-            result.stdout
-            or result.stderr
-            or ("Brightness applied." if result.ok else "Unable to apply brightness.")
-        )
+        if not ok:
+            self.status.setText(
+                message or "Unable to apply keyboard brightness."
+            )
+            return
 
-    def turn_on(self) -> None:
-        result = self.controller.keyboard_on()
-        self.output.setPlainText(
-            result.stdout or result.stderr or "Keyboard backlight enabled."
+        self.status.setText(
+            f"Keyboard brightness: {self.brightness.value()}%"
         )
+        self.refresh_status()
 
-    def turn_off(self) -> None:
-        result = self.controller.keyboard_off()
-        self.output.setPlainText(
-            result.stdout or result.stderr or "Keyboard backlight disabled."
+    def toggle_keyboard(self) -> None:
+        state = self.controller.state()
+        enabled = not state["enabled"]
+        ok, message = self.controller.set_enabled(enabled)
+
+        if not ok:
+            self.status.setText(
+                message or "Unable to change keyboard state."
+            )
+            return
+
+        self.status.setText(
+            "Keyboard backlight ON."
+            if enabled
+            else "Keyboard backlight OFF."
         )
+        self.refresh_status()
 
     def refresh_status(self) -> None:
-        result = self.controller.keyboard_status()
-        self.output.setPlainText(
-            result.stdout
-            or result.stderr
-            or "gigactl keyboard status unavailable."
+        state = self.controller.state()
+
+        self.selected_color = self._rgb_hex(
+            state["r"],
+            state["g"],
+            state["b"],
         )
+        self.brightness.setValue(state["brightness"])
+        self.brightness_label.setText(f"{state['brightness']}%")
+        self.power_button.setText(
+            "Turn OFF" if state["enabled"] else "Turn ON"
+        )
+        self._refresh_key_styles()
+
+        if state["available"]:
+            self.status.setText(
+                f"1-zone RGB • {self.selected_color.upper()} • "
+                f"{state['brightness']}% • "
+                f"{'ON' if state['enabled'] else 'OFF'}"
+            )
+        else:
+            self.status.setText(
+                "Native RGB backend unavailable. "
+                "Load ec_sys with write support and use the verified G6 KF hardware."
+            )
 
 
 class BatteryPage(QWidget):
