@@ -150,17 +150,48 @@ class BatteryController:
         # which uses charge_control_* thresholds.
         time_remaining_minutes = None
         if state and power_w and power_w > 0.1:
-            if state.lower() == "discharging" and energy_now is not None:
-                time_remaining_minutes = max(
-                    0.0,
-                    energy_now / (power_w * 1_000_000) * 60,
-                )
-            elif state.lower() == "charging" and energy_now is not None and energy_full is not None:
-                if energy_full > energy_now:
+            state_lower = state.lower()
+
+            if state_lower == "discharging":
+                if energy_now is not None:
+                    time_remaining_minutes = max(
+                        0.0,
+                        energy_now / (power_w * 1_000_000) * 60,
+                    )
+                elif (
+                    charge_now is not None
+                    and current_a is not None
+                    and current_a > 0.05
+                ):
+                    time_remaining_minutes = max(
+                        0.0,
+                        charge_now / 1_000_000.0 / current_a * 60,
+                    )
+
+            elif state_lower == "charging":
+                if (
+                    energy_now is not None
+                    and energy_full is not None
+                    and energy_full > energy_now
+                ):
                     time_remaining_minutes = max(
                         0.0,
                         (energy_full - energy_now)
                         / (power_w * 1_000_000)
+                        * 60,
+                    )
+                elif (
+                    charge_now is not None
+                    and charge_full is not None
+                    and current_a is not None
+                    and current_a > 0.05
+                    and charge_full > charge_now
+                ):
+                    time_remaining_minutes = max(
+                        0.0,
+                        (charge_full - charge_now)
+                        / 1_000_000.0
+                        / current_a
                         * 60,
                     )
 
