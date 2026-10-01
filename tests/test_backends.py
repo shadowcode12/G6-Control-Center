@@ -32,6 +32,13 @@ def test_epp_labels():
     }
 
 
+def test_keyboard_is_single_zone_with_presets():
+    keyboard = KeyboardController()
+    assert keyboard.PRESETS["Blue"] == (0, 0, 255)
+    assert keyboard.PRESETS["White"] == (255, 255, 255)
+    assert len(keyboard.PRESETS) >= 9
+
+
 def test_native_backends_construct_without_hardware_writes():
     PerformanceController()
     NvidiaController()
