@@ -46,6 +46,10 @@ sudo /usr/sbin/modprobe clevo_acpi 2>/dev/null || true
 sudo install -m 0644 "${ROOT}/assets/g6-control-center-telemetry.service" /etc/systemd/system/g6-control-center-telemetry.service
 sudo systemctl daemon-reload
 sudo systemctl enable --now g6-control-center-telemetry.service
+sudo install -m 0644 "${ROOT}/assets/g6-control-center-keyboard.service" /etc/systemd/system/g6-control-center-keyboard.service
+sudo systemctl daemon-reload
+sudo systemctl enable g6-control-center-keyboard.service
+sudo systemctl start g6-control-center-keyboard.service || true
 
 echo
 echo "Installed. Launch with: g6-control-center"
