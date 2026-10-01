@@ -18,6 +18,10 @@ The graphics layer combines NVIDIA `nvidia-smi` telemetry and Intel DRM/sysfs te
 
 The native telemetry service reads the verified G6 KF EC registers for CPU/GPU temperature, fan duty and fan tach period, then publishes `/run/g6-control-center/telemetry.json`. The GUI polls that file once per second. Manual fan control is not exposed because this stage is telemetry-first and avoids risky EC writes.
 
+## Keyboard RGB
+
+The G6 KF keyboard is a 1-zone RGB device. The native backend uses the EC keyboard mailbox rather than gigactl: a keyboard master-enable command is followed by color/brightness commands, with color components sent in the EC's B,R,G byte order. The UI shows a full-size keyboard/numpad preview because the G6 is specified with a full-size keyboard and numeric keypad.
+
 ## Battery
 
 Battery telemetry is read from `/sys/class/power_supply/BAT*`. When the active driver exposes the standard start/end threshold files, the UI provides Full Charge, Locked at 80% and Custom modes. Linux defines `charge_type=Custom` as the charging mode that uses `charge_control_*` threshold properties. Clevo-family FlexiCharger support on Linux is dependent on a compatible `clevo_acpi` driver.
