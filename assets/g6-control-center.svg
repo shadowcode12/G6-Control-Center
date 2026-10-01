@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256">
+  <rect x="12" y="12" width="232" height="232" rx="52" fill="#151922"/>
+  <rect x="30" y="30" width="196" height="196" rx="42" fill="none" stroke="#ff6b2c" stroke-width="12"/>
+  <text x="128" y="157" text-anchor="middle" font-family="sans-serif" font-size="88" font-weight="800" fill="#ff6b2c">G6</text>
+</svg>

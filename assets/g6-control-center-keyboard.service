@@ -1,0 +1,14 @@
+[Unit]
+Description=G6 Control Center native keyboard RGB restore
+After=multi-user.target g6-control-center-telemetry.service
+Wants=g6-control-center-telemetry.service
+
+[Service]
+Type=oneshot
+ExecStartPre=/usr/sbin/modprobe ec_sys
+ExecStart=/opt/g6-control-center/venv/bin/python /usr/lib/g6-control-center/privileged_helper.py keyboard-restore
+User=root
+Group=root
+
+[Install]
+WantedBy=multi-user.target

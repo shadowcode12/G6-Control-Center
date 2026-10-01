@@ -1,0 +1,29 @@
+[Unit]
+Description=G6 Control Center native hardware telemetry
+After=local-fs.target systemd-modules-load.service
+ConditionPathExists=/sys/kernel/debug
+
+[Service]
+Type=simple
+
+# ec_sys is a kernel module; loading an already-loaded module is harmless.
+ExecStartPre=/bin/sh -c '/usr/sbin/modprobe ec_sys'
+ExecStartPre=/bin/sh -c '/usr/sbin/modprobe clevo_acpi >/dev/null 2>&1 || true'
+ExecStart=/opt/g6-control-center/venv/bin/python -m app.services.telemetry_daemon
+
+Restart=on-failure
+RestartSec=2
+
+User=root
+Group=root
+
+# systemd creates /run/g6-control-center before starting the service.
+RuntimeDirectory=g6-control-center
+RuntimeDirectoryMode=0755
+
+# The current native stage only reads EC telemetry and writes one JSON snapshot.
+ProtectHome=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

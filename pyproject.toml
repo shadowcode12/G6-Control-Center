@@ -1,0 +1,19 @@
+[build-system]
+requires = ["setuptools>=69", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "g6-control-center"
+version = "0.2.0"
+description = "Linux control center for Gigabyte G5/G6-class gaming laptops"
+readme = "README.md"
+requires-python = ">=3.11"
+license = {text = "MIT"}
+authors = [{name = "shadowcode12"}]
+dependencies = ["PySide6>=6.8", "psutil>=6.0"]
+
+[project.scripts]
+g6-control-center = "app.main:main"
+
+[tool.setuptools.packages.find]
+include = ["app*"]
