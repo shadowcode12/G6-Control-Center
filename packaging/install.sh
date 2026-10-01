@@ -41,6 +41,7 @@ if [ -f "${ROOT}/assets/g6-control-center.svg" ]; then
 fi
 
 echo "[6/6] Installing native hardware telemetry service"
+sudo install -m 0644 "${ROOT}/assets/g6-control-center-ec.conf" /etc/modprobe.d/g6-control-center-ec.conf
 # Load optional Clevo ACPI support when the running kernel provides it.
 sudo /usr/sbin/modprobe clevo_acpi 2>/dev/null || true
 sudo install -m 0644 "${ROOT}/assets/g6-control-center-telemetry.service" /etc/systemd/system/g6-control-center-telemetry.service
