@@ -1263,25 +1263,29 @@ class BatteryPage(QWidget):
 
         title, subtitle = page_header(
             "Battery",
-            "Live battery, charging and FlexiCharger-style limits",
+            "Live battery health, charging state and charge protection",
         )
         layout.addWidget(title)
         layout.addWidget(subtitle)
 
+        cards = QGridLayout()
+        cards.setHorizontalSpacing(14)
+        cards.setVerticalSpacing(14)
+
         self.capacity_card = metric_card("CHARGE", "--", "Current")
         self.health_card = metric_card("HEALTH", "--", "Full / design")
         self.power_card = metric_card("POWER", "--", "Battery draw")
-        self.limit_card = metric_card("LIMIT", "--", "Stop charging")
+        self.state_card = metric_card("STATE", "--", "Charging state")
 
-        cards = QGridLayout()
         cards.addWidget(self.capacity_card, 0, 0)
         cards.addWidget(self.health_card, 0, 1)
         cards.addWidget(self.power_card, 0, 2)
-        cards.addWidget(self.limit_card, 1, 0)
+        cards.addWidget(self.state_card, 1, 0)
+
         layout.addLayout(cards)
 
-        group = QGroupBox("Charging Limit")
-        form = QFormLayout(group)
+        charge_group = QGroupBox("Charging Protection")
+        charge_form = QFormLayout(charge_group)
 
         self.mode_combo = QComboBox()
         self.mode_combo.addItems(
@@ -1305,45 +1309,50 @@ class BatteryPage(QWidget):
             [f"{value}%" for value in BatteryController.CLEVO_END_VALUES]
         )
 
-        self.apply_button = QPushButton("Apply Charging Mode")
-        self.apply_button.clicked.connect(self.apply_mode)
-
-        form.addRow("Mode:", self.mode_combo)
-
         self.start_label = QLabel("Start charging below:")
         self.stop_label = QLabel("Stop charging at:")
 
-        form.addRow(
-            self.start_label,
-            self.start_combo,
-        )
-        form.addRow(
-            self.stop_label,
-            self.stop_combo,
-        )
-        form.addRow("", self.apply_button)
+        self.apply_button = QPushButton("Apply Charging Mode")
+        self.apply_button.clicked.connect(self.apply_mode)
 
-        note = QLabel(
-            "Full Charge = 100%. Locked at 80% uses a 70% start / 80% stop "
-            "cycle. Custom mode exposes the supported FlexiCharger-style "
-            "start/stop thresholds. Custom thresholds are only enabled when "
-            "Linux exposes both writable charging threshold interfaces."
-        )
-        note.setObjectName("info")
-        note.setWordWrap(True)
-        form.addRow("", note)
+        charge_form.addRow("Mode:", self.mode_combo)
+        charge_form.addRow(self.start_label, self.start_combo)
+        charge_form.addRow(self.stop_label, self.stop_combo)
+        charge_form.addRow("", self.apply_button)
 
-        layout.addWidget(group)
+        self.capability_label = QLabel("Checking charge-control support...")
+        self.capability_label.setObjectName("info")
+        self.capability_label.setWordWrap(True)
+        charge_form.addRow("", self.capability_label)
 
-        details_group = QGroupBox("Battery Details")
-        details_layout = QVBoxLayout(details_group)
+        layout.addWidget(charge_group)
 
-        self.details = QTextEdit()
-        self.details.setReadOnly(True)
-        self.details.setMinimumHeight(150)
-        details_layout.addWidget(self.details)
+        detail_group = QGroupBox("Battery Details")
+        detail_layout = QGridLayout(detail_group)
 
-        layout.addWidget(details_group)
+        self.state_value = QLabel("--")
+        self.charger_value = QLabel("--")
+        self.driver_value = QLabel("--")
+        self.voltage_value = QLabel("--")
+        self.current_value = QLabel("--")
+        self.eta_value = QLabel("--")
+
+        detail_layout.addWidget(QLabel("State"), 0, 0)
+        detail_layout.addWidget(self.state_value, 0, 1)
+        detail_layout.addWidget(QLabel("Charger"), 0, 2)
+        detail_layout.addWidget(self.charger_value, 0, 3)
+
+        detail_layout.addWidget(QLabel("Driver"), 1, 0)
+        detail_layout.addWidget(self.driver_value, 1, 1)
+        detail_layout.addWidget(QLabel("Voltage"), 1, 2)
+        detail_layout.addWidget(self.voltage_value, 1, 3)
+
+        detail_layout.addWidget(QLabel("Current"), 2, 0)
+        detail_layout.addWidget(self.current_value, 2, 1)
+        detail_layout.addWidget(QLabel("Time estimate"), 2, 2)
+        detail_layout.addWidget(self.eta_value, 2, 3)
+
+        layout.addWidget(detail_group)
 
         self.status = QLabel("Reading battery...")
         self.status.setObjectName("info")
@@ -1355,6 +1364,8 @@ class BatteryPage(QWidget):
         self.timer = QTimer(self)
         self.timer.timeout.connect(self.refresh)
         self.timer.start(1000)
+
+        self._update_custom_visibility("Full Charge")
         self.refresh()
 
     def _update_custom_visibility(self, mode: str) -> None:
@@ -1380,26 +1391,29 @@ class BatteryPage(QWidget):
         info = self.controller.status()
 
         if not info.get("available"):
-            self.capacity_card.value_label.setText("N/A")
-            self.health_card.value_label.setText("N/A")
-            self.power_card.value_label.setText("N/A")
-            self.limit_card.value_label.setText("Unsupported")
+            for card in (
+                self.capacity_card,
+                self.health_card,
+                self.power_card,
+                self.state_card,
+            ):
+                card.value_label.setText("N/A")
+
             self.apply_button.setEnabled(False)
-            self.details.setPlainText(
+            self.capability_label.setText(
                 info.get("reason")
-                or "No battery device detected."
+                or "Battery telemetry is unavailable."
             )
             self.status.setText(
                 info.get("reason")
-                or "No battery device detected."
+                or "Battery telemetry is unavailable."
             )
             return
 
         capacity = info.get("capacity")
         health = info.get("health")
         power = info.get("power_w")
-        start = info.get("charge_start")
-        stop = info.get("charge_limit")
+        state = info.get("state") or "Unknown"
 
         self.capacity_card.value_label.setText(
             f"{capacity}%"
@@ -1416,11 +1430,42 @@ class BatteryPage(QWidget):
             if isinstance(power, (int, float))
             else "N/A"
         )
-        self.limit_card.value_label.setText(
-            f"{stop}%"
-            if isinstance(stop, int)
-            else "Unsupported"
+        self.state_card.value_label.setText(state.title())
+
+        self.state_value.setText(state.title())
+        charger = info.get("charger_connected")
+        self.charger_value.setText(
+            "Connected"
+            if charger is True
+            else "Disconnected"
+            if charger is False
+            else "Unknown"
         )
+        self.driver_value.setText(
+            info.get("driver") or "Kernel default"
+        )
+
+        voltage = info.get("voltage_v")
+        current = info.get("current_a")
+
+        self.voltage_value.setText(
+            f"{voltage:.2f} V"
+            if isinstance(voltage, (int, float))
+            else "N/A"
+        )
+        self.current_value.setText(
+            f"{current:.2f} A"
+            if isinstance(current, (int, float))
+            else "N/A"
+        )
+        self.eta_value.setText(
+            self._format_minutes(
+                info.get("time_remaining_minutes")
+            )
+        )
+
+        start = info.get("charge_start")
+        stop = info.get("charge_limit")
 
         if isinstance(start, int):
             index = self.start_combo.findText(f"{start}%")
@@ -1439,73 +1484,39 @@ class BatteryPage(QWidget):
             supports_end or supports_custom
         )
 
-        # Match UI mode to the actual current state.
-        if stop == 100:
-            mode = "Full Charge"
-        elif stop == 80:
-            mode = "Locked at 80%"
-        elif supports_custom:
-            mode = "Custom"
+        if supports_end:
+            if stop == 100:
+                mode = "Full Charge"
+            elif stop == 80:
+                mode = "Locked at 80%"
+            elif supports_custom:
+                mode = "Custom"
+            else:
+                mode = "Custom"
+
+            blocked = self.mode_combo.blockSignals(True)
+            self.mode_combo.setCurrentText(mode)
+            self.mode_combo.blockSignals(blocked)
+            self._update_custom_visibility(mode)
+
+            self.capability_label.setText(
+                "Charge protection is available through the active Linux "
+                "battery driver."
+            )
         else:
-            mode = "Custom"
+            blocked = self.mode_combo.blockSignals(True)
+            self.mode_combo.setCurrentText("Full Charge")
+            self.mode_combo.blockSignals(blocked)
+            self._update_custom_visibility("Full Charge")
+            self.capability_label.setText(
+                "Battery telemetry is live, but the active Linux battery "
+                "driver is not exposing writable charge thresholds. "
+                "The controls remain disabled rather than pretending they work."
+            )
 
-        blocked = self.mode_combo.blockSignals(True)
-        self.mode_combo.setCurrentText(mode)
-        self.mode_combo.blockSignals(blocked)
-        self._update_custom_visibility(mode)
-
-        charger = info.get("charger_connected")
-        charger_text = (
-            "Connected" if charger is True
-            else "Disconnected" if charger is False
-            else "Unknown"
+        self.status.setText(
+            f"Battery telemetry • {state.title()} • live"
         )
-
-        lines = [
-            f"Device: {info.get('name', 'Battery')}",
-            f"Driver: {info.get('driver') or 'Kernel default'}",
-            f"State: {info.get('state') or 'Unknown'}",
-            f"Charger: {charger_text}",
-            (
-                f"Voltage: {info['voltage_v']:.2f} V"
-                if isinstance(info.get("voltage_v"), (int, float))
-                else "Voltage: N/A"
-            ),
-            (
-                f"Current: {info['current_a']:.2f} A"
-                if isinstance(info.get("current_a"), (int, float))
-                else "Current: N/A"
-            ),
-            (
-                f"Time estimate: "
-                f"{self._format_minutes(info.get('time_remaining_minutes'))}"
-            ),
-            (
-                f"Charging thresholds: "
-                f"{start}% → {stop}%"
-                if isinstance(start, int) and isinstance(stop, int)
-                else "Charging thresholds: unavailable"
-            ),
-        ]
-        self.details.setPlainText("\n".join(lines))
-
-        if supports_custom:
-            self.status.setText(
-                "Charge control available. "
-                "Custom mode uses the kernel's reported start/stop thresholds."
-            )
-        elif supports_end:
-            self.status.setText(
-                "Charge-stop control available. "
-                "Custom start/stop control is not exposed."
-            )
-        else:
-            self.status.setText(
-                "Live battery telemetry is available, but the current Linux "
-                "battery driver does not expose charge thresholds. "
-                "For Clevo-family FlexiCharger support, a compatible "
-                "clevo_acpi interface may be required."
-            )
 
     def apply_mode(self) -> None:
         mode = self.mode_combo.currentText()
@@ -1530,9 +1541,8 @@ class BatteryPage(QWidget):
             )
 
         if not ok:
-            show_error(
-                self,
-                message or "Unable to apply charging mode.",
+            self.status.setText(
+                message or "Unable to apply charging mode."
             )
             return
 
@@ -1540,6 +1550,7 @@ class BatteryPage(QWidget):
             f"{mode} charging mode applied."
         )
         self.refresh()
+
 
 class SettingsPage(QWidget):
     def __init__(
