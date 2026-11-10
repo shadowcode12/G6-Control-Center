@@ -167,7 +167,8 @@ try {
     $processRows = @(
         Get-CimInstance Win32_Process |
         Where-Object {
-            $_.Name -match "^(CC40|DCHUService|HKClipSvc|FnKey|cc30wk|FanSpeedSetting)\.exe$"
+            $_.Name -match "(?i)(CC40|DCHUService|HKClipSvc|FnKey|cc30wk|FanSpeedSetting|ControlCenter|GIGABYTE|GCC|Flexi)" -or
+            ($installRoot -and $_.ExecutablePath -and $_.ExecutablePath.StartsWith($installRoot, [System.StringComparison]::OrdinalIgnoreCase))
         } |
         Select-Object Name, ProcessId, ExecutablePath, CommandLine
     )

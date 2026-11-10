@@ -10,6 +10,7 @@ public sealed class MainViewModel : ObservableObject, IDisposable
 {
     private readonly SystemMetricsService _metrics = new();
     private readonly NvidiaSmiService _nvidia = new();
+    private readonly CpuPerformanceClockService _cpuClock = new();
     private readonly Dispatcher _dispatcher = Dispatcher.CurrentDispatcher;
     private readonly DispatcherTimer _timer;
     private CancellationTokenSource? _gpuPollingCts;
@@ -42,7 +43,8 @@ public sealed class MainViewModel : ObservableObject, IDisposable
 
     private string _cpuTemperatureValue = "Detecting…";
     private string _cpuTemperatureDetail = "Hardware sensor scan";
-    private string _cpuClockValue = "—";
+    private string _cpuClockValue = "Sampling…";
+    private string _cpuClockDetail = "Windows Processor Performance counter";
     private string _cpuPowerValue = "—";
     private string _fanSpeedValue = "Detecting…";
     private string _fanSpeedDetail = "Fan RPM is shown only when the controller exposes it.";
@@ -85,6 +87,7 @@ public sealed class MainViewModel : ObservableObject, IDisposable
     public string CpuTemperatureValue { get => _cpuTemperatureValue; private set => SetProperty(ref _cpuTemperatureValue, value); }
     public string CpuTemperatureDetail { get => _cpuTemperatureDetail; private set => SetProperty(ref _cpuTemperatureDetail, value); }
     public string CpuClockValue { get => _cpuClockValue; private set => SetProperty(ref _cpuClockValue, value); }
+    public string CpuClockDetail { get => _cpuClockDetail; private set => SetProperty(ref _cpuClockDetail, value); }
     public string CpuPowerValue { get => _cpuPowerValue; private set => SetProperty(ref _cpuPowerValue, value); }
     public string FanSpeedValue { get => _fanSpeedValue; private set => SetProperty(ref _fanSpeedValue, value); }
     public string FanSpeedDetail { get => _fanSpeedDetail; private set => SetProperty(ref _fanSpeedDetail, value); }
@@ -127,6 +130,13 @@ public sealed class MainViewModel : ObservableObject, IDisposable
             DriveValue = $"{snapshot.SystemDriveUsedPercent:0}%";
             DriveDetail = $"{snapshot.SystemDriveUsedGiB:0.0} GB used of {snapshot.SystemDriveTotalGiB:0.0} GB · {snapshot.SystemDriveName}";
             UptimeValue = FormatUptime(snapshot.Uptime);
+
+            var effectiveClockMHz = _cpuClock.TryReadEffectiveClockMHz();
+            CpuClockValue = effectiveClockMHz is double clockMHz
+                ? $"{clockMHz:0} MHz"
+                : "N/A";
+            CpuClockDetail = _cpuClock.StatusMessage;
+
             LastUpdated = $"Updated {snapshot.SampledAt:HH:mm:ss}";
             Status = "Online · read-only monitoring";
         }
@@ -227,9 +237,11 @@ public sealed class MainViewModel : ObservableObject, IDisposable
             ? $"Source: {snapshot.CpuTemperatureSource}"
             : "Not reported by the current sensor interface";
 
-        CpuClockValue = snapshot.CpuClockMHz is double clock
-            ? $"{clock / 1000:0.00} GHz"
-            : "N/A";
+        if (snapshot.CpuClockMHz is double hardwareClock)
+        {
+            CpuClockValue = $"{hardwareClock:0} MHz";
+            CpuClockDetail = "Hardware-reported CPU core clock sensor";
+        }
 
         CpuPowerValue = snapshot.CpuPackagePowerW is double power && power > 0.1
             ? $"{power:0.0} W"
@@ -321,5 +333,6 @@ public sealed class MainViewModel : ObservableObject, IDisposable
         _gpuPollingCts = null;
         _hardwarePollingCts?.Dispose();
         _hardwarePollingCts = null;
+        _cpuClock.Dispose();
     }
 }

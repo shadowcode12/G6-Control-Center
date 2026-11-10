@@ -42,7 +42,7 @@
                     <Border Background="{StaticResource SurfaceBrush}" CornerRadius="12" Padding="13" Margin="0,0,0,12">
                         <StackPanel>
                             <TextBlock Text="DEVELOPMENT BUILD" FontSize="9" Foreground="{StaticResource MutedBrush}" />
-                            <TextBlock Text="v0.3.1 · sensor diagnostics" FontSize="12" Margin="0,7,0,0" />
+                            <TextBlock Text="v0.4.0 · CPU clock" FontSize="12" Margin="0,7,0,0" />
                             <TextBlock Text="Hardware writes disabled" FontSize="10" Foreground="{StaticResource AccentBrush}" Margin="0,5,0,0" />
                         </StackPanel>
                     </Border>
@@ -178,7 +178,7 @@
                         <StackPanel>
                             <TextBlock Text="CPU FREQUENCY" FontSize="10" FontWeight="Bold" Foreground="{StaticResource MutedBrush}" />
                             <TextBlock Text="{Binding CpuClockValue}" FontSize="34" FontWeight="SemiBold" Margin="0,16,0,13" />
-                            <TextBlock Text="Average of reported CPU core clock sensors" FontSize="11" Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" />
+                            <TextBlock Text="{Binding CpuClockDetail}" FontSize="11" Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" />
                         </StackPanel>
                     </Border>
                     <Border Style="{StaticResource MetricCard}">

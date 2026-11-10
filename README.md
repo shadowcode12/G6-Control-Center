@@ -6,10 +6,11 @@ A Windows-first, independent control center for the GIGABYTE G6 KF. The active W
 
 ## Windows application
 
-### Current milestone: v0.3.1 — CPU/GPU telemetry and sensor diagnostics
+### Current milestone: v0.4.0 — CPU/GPU telemetry, effective CPU clock estimate and OEM binary research
 
 - WPF application using an MVVM-style structure.
 - CPU utilization through Windows `GetSystemTimes`.
+- A labelled effective CPU-frequency estimate from the Windows Processor Information `% Processor Performance` PDH counter and CPUID nominal/base MHz; this is a derived value, not a direct per-core clock sensor.
 - Physical memory through `GlobalMemoryStatusEx`.
 - System drive capacity and usage through `DriveInfo`.
 - System uptime through `Environment.TickCount64`.
@@ -75,7 +76,7 @@ docs/
 
 1. Reliable app startup and Windows read-only telemetry.
 2. CPU and NVIDIA GPU telemetry.
-3. Validate CPU temperature, CPU clock, package power and fan RPM sensor sources on the exact G6 KF.
+3. Validate CPU temperature, package power and fan RPM sensor sources on the exact G6 KF; the current CPU frequency value is an explicitly labelled Windows performance-counter estimate.
 4. Exact hardware inventory and read-only device capability discovery.
 5. Hardware abstraction layer with per-feature capability gates.
 6. Carefully scoped controls with bounds, confirmation, rollback and audit logs.

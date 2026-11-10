@@ -47,3 +47,13 @@ Understand the installed GIGABYTE/CLEVO application architecture on the owner's 
 - OEM screenshots from the exact G6 KF show CPU temperature, CPU clock and two fan RPM/duty values even though WMI and LibreHardwareMonitor did not expose those readings.
 - A separate public Clevo model analysis documents a possible root/WMI / CLEVO_GET service interface and read-oriented fan getter command names, separate from setter commands 104/105. This is a candidate to validate, not assumed compatible with the G6 KF.
 - That external report warns that its package-12 fan telemetry query writes EC command/data registers as part of the ACPI read transaction. G6 Control Center will not invoke that path until compatibility and side effects are understood and the owner explicitly approves a probe.
+
+## Exact OEM binary analysis (2026-11-11)
+
+- The second evidence collection was still non-elevated (IsAdministrator=false). It captured DCHUService.exe, HKClipSvc.exe and FnKey.exe; FnKey.exe loaded GetProductdll.dll and InsydeDCHU.dll from the AppX package's FnKey root. It did not capture CC40.exe or GetCurrentCpuSpeed.dll as loaded modules.
+- The package has separate bridge devices: CLV0001 maps to Insyde AcpiBridge through oem30.inf (1.0.0.7); CLV0002 maps to CLEVO Acpi Bridge1 through oem70.inf (6.0.46.2) and CCDCHUService/DCHUService.exe.
+- root\WMI had 1600 classes but no CLEVO_GET class; the explicit query returned Invalid class. Two Microsoft WmiAcpi PNP0C14 devices were found. No WMI method was invoked.
+- DCHUService.exe contains string literals for CLEVO_GET.InstanceName='ACPI\PNP0C14\0_0' and fan/temperature method names (GetCPUtemp, GetVGA1temp, GetFan12RPM, GetFan34RPM, Fan1Info through Fan4Info), as well as setter names. These strings do not establish live WMI class registration or method compatibility.
+- GetCurrentCpuSpeed.dll exports GetBaseSpeed, GetCpuSpeed and GetProcessorPerformance, and imports PDH query/counter APIs. Its embedded strings identify the Processor Information % Processor Performance counter and Win32_Processor MaxClockSpeed WMI property. This confirms a Windows PDH/WMI frequency path separate from DCHU.
+- InsydeDCHU.dll exports GetDCHU_Data_Integer/GetDCHU_Data_Buffer and setters. Static disassembly of GetDCHU_Data_Integer shows an ACPI _DSM request passed through DeviceIoControl (control code 0x322400). Do not invoke until exact G6 KF arguments and side effects are validated.
+- The actually loaded FnKey-root InsydeDCHU.dll is a third distinct hash; it must not be assumed byte-identical to the CC40 or DCHU-subfolder copies.
