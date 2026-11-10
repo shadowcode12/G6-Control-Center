@@ -1,5 +1,19 @@
+# .NET
+**/bin/
+**/obj/
+.vs/
+*.user
+*.suo
+TestResults/
+
+# Python prototype
 __pycache__/
 *.py[cod]
 .pytest_cache/
 .venv/
 venv/
+
+# IDE / OS
+.vscode/
+.DS_Store
+Thumbs.db
