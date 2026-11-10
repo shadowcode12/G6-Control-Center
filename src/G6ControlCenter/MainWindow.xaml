@@ -75,7 +75,7 @@
                                 <TextBlock Text="01" DockPanel.Dock="Right" FontSize="10" Foreground="#627185" />
                             </DockPanel>
                             <TextBlock Text="{Binding CpuValue}" FontSize="38" FontWeight="SemiBold" Margin="0,18,0,14" />
-                            <ProgressBar Style="{StaticResource MetricProgress}" Maximum="100" Value="{Binding CpuUsage}" />
+                            <ProgressBar Style="{StaticResource MetricProgress}" Maximum="100" Value="{Binding CpuUsage, Mode=OneWay}" />
                             <TextBlock Text="Total processor utilization" FontSize="11" Foreground="{StaticResource MutedBrush}" Margin="0,13,0,0" />
                         </StackPanel>
                     </Border>
@@ -86,7 +86,7 @@
                                 <TextBlock Text="02" DockPanel.Dock="Right" FontSize="10" Foreground="#627185" />
                             </DockPanel>
                             <TextBlock Text="{Binding MemoryValue}" FontSize="38" FontWeight="SemiBold" Margin="0,18,0,14" />
-                            <ProgressBar Style="{StaticResource MetricProgress}" Maximum="100" Value="{Binding MemoryUsage}" />
+                            <ProgressBar Style="{StaticResource MetricProgress}" Maximum="100" Value="{Binding MemoryUsage, Mode=OneWay}" />
                             <TextBlock Text="{Binding MemoryDetail}" FontSize="11" Foreground="{StaticResource MutedBrush}" Margin="0,13,0,0" />
                         </StackPanel>
                     </Border>
@@ -97,7 +97,7 @@
                                 <TextBlock Text="03" DockPanel.Dock="Right" FontSize="10" Foreground="#627185" />
                             </DockPanel>
                             <TextBlock Text="{Binding DriveValue}" FontSize="38" FontWeight="SemiBold" Margin="0,18,0,14" />
-                            <ProgressBar Style="{StaticResource MetricProgress}" Maximum="100" Value="{Binding DriveUsage}" />
+                            <ProgressBar Style="{StaticResource MetricProgress}" Maximum="100" Value="{Binding DriveUsage, Mode=OneWay}" />
                             <TextBlock Text="{Binding DriveDetail}" FontSize="11" Foreground="{StaticResource MutedBrush}" Margin="0,13,0,0" />
                         </StackPanel>
                     </Border>
