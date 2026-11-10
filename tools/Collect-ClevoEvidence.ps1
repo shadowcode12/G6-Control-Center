@@ -4,7 +4,7 @@
 
 $ErrorActionPreference = "Continue"
 $OutDir = Join-Path $env:USERPROFILE "Desktop\G6-RE"
-$OutFile = Join-Path $OutDir "OEM-Sensor-Inventory.txt"
+$OutFile = Join-Path $OutDir "OEM-Sensor-Inventory.json"
 New-Item -ItemType Directory -Force -Path $OutDir | Out-Null
 
 $report = [ordered]@{
@@ -16,6 +16,7 @@ $report = [ordered]@{
     AcpiDevices = @()
     WmiClasses = @()
     WmiInstances = @()
+    LegacyWmiMethods = @()
     CandidateBinaries = @()
     Errors = @()
 }
@@ -136,6 +137,22 @@ try {
     $report.Errors += "WMI class discovery: $($_.Exception.Message)"
 }
 
+# Also query the legacy WMI class metadata through the WMI class accelerator.
+# This enumerates method names only; it does not invoke them.
+try {
+    $legacyClass = [wmiclass]"root\WMI:CLEVO_GET"
+    $report.LegacyWmiMethods = @(
+        $legacyClass.Methods | ForEach-Object {
+            [pscustomobject]@{
+                Name = $_.Name
+                Origin = $_.Origin
+            }
+        }
+    )
+} catch {
+    $report.Errors += "Legacy CLEVO_GET method inventory: $($_.Exception.Message)"
+}
+
 $paths = @()
 if ($cc40Root) {
     $paths += (Join-Path $cc40Root "CC40.exe")
@@ -149,6 +166,20 @@ if ($dchuRoot) {
     $paths += (Join-Path $dchuRoot "GetProductdll.dll")
 }
 $paths += "C:\Program Files (x86)\ControlCenter\DCHU\InsydeDCHU.dll"
+
+# Include the active service executable and adjacent bridge files when its path is discoverable.
+$servicePath = $report.Services |
+    Where-Object { $_.Name -match "DCHU" -and $_.PathName } |
+    Select-Object -First 1 -ExpandProperty PathName
+if ($servicePath) {
+    $serviceExe = [regex]::Match($servicePath, '^\s*"?(.+?\.exe)"?(?:\s|$)', 'IgnoreCase').Groups[1].Value
+    if ($serviceExe -and (Test-Path -LiteralPath $serviceExe)) {
+        $driverDirectory = Split-Path $serviceExe -Parent
+        $paths += $serviceExe
+        $paths += (Join-Path $driverDirectory "AcpiBridge.sys")
+        $paths += (Join-Path $driverDirectory "AcpiBridge.inf")
+    }
+}
 
 foreach ($path in ($paths | Select-Object -Unique)) {
     if (-not (Test-Path -LiteralPath $path -PathType Leaf)) { continue }

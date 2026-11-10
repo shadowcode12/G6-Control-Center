@@ -110,7 +110,7 @@ powershell.exe -ExecutionPolicy Bypass -File .\tools\Collect-ClevoEvidence.ps1
 The script saves:
 
 ```text
-%USERPROFILE%\Desktop\G6-RE\OEM-Sensor-Inventory.txt
+%USERPROFILE%\Desktop\G6-RE\OEM-Sensor-Inventory.json
 ```
 
 It only inventories WMI classes/instances, PnP devices, services, process modules and candidate DLL metadata. It does not invoke any CLEVO getter/setter method, load a vendor DLL, call DeviceIoControl, or access ACPI/EC. Upload the resulting inventory so the exact G6 KF WMI interface can be mapped before adding a sensor reader.
