@@ -1,3 +1,6 @@
+using System.Globalization;
+using System.IO;
+using System.Security.Principal;
 using G6ControlCenter.Models;
 using LibreHardwareMonitor.Hardware;
 
@@ -9,11 +12,24 @@ namespace G6ControlCenter.Services;
 /// </summary>
 public sealed class LibreHardwareSensorService : IDisposable
 {
+    private sealed record SensorObservation(
+        string Hardware,
+        string Sensor,
+        string Type,
+        double? Value);
+
     private readonly object _gate = new();
     private readonly Computer _computer;
     private readonly bool _isOpen;
     private readonly string? _openError;
     private bool _disposed;
+    private bool _diagnosticWritten;
+
+    private static readonly string DiagnosticPath = Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+        "G6ControlCenter",
+        "Logs",
+        "hardware-sensors.log");
 
     public LibreHardwareSensorService()
     {
@@ -44,8 +60,12 @@ public sealed class LibreHardwareSensorService : IDisposable
 
             if (!_isOpen)
             {
-                return HardwareSensorSnapshot.Unavailable(
-                    $"Hardware sensor access could not initialize: {_openError}. Some sensors may require running the app as Administrator.");
+                var errorStatus =
+                    $"Hardware sensor access could not initialize: {_openError}. Some sensors may require Administrator access.";
+                var reportPath = WriteOpenFailureReport(_openError ?? "Unknown initialization error.");
+                return new HardwareSensorSnapshot(
+                    null, "Not exposed", null, null, Array.Empty<FanSensorReading>(),
+                    errorStatus, reportPath);
             }
 
             var hardware = EnumerateHardware(_computer.Hardware).ToArray();
@@ -68,18 +88,19 @@ public sealed class LibreHardwareSensorService : IDisposable
                 .ToArray();
 
             var cpuSensors = cpuDevices.SelectMany(device => device.Sensors
-                .Where(sensor => sensor.Value.HasValue)
-                .Select(sensor => new
-                {
-                    Hardware = device.Name,
-                    Sensor = sensor.Name,
-                    Type = sensor.SensorType.ToString(),
-                    Value = (double)sensor.Value!.Value
-                }))
+                .Select(sensor => new SensorObservation(
+                    device.Name,
+                    sensor.Name,
+                    sensor.SensorType.ToString(),
+                    sensor.Value.HasValue && float.IsFinite(sensor.Value.Value)
+                        ? (double?)sensor.Value.Value
+                        : null)))
                 .ToArray();
 
             var temperatures = cpuSensors
-                .Where(sensor => sensor.Type.Equals("Temperature", StringComparison.OrdinalIgnoreCase))
+                .Where(sensor =>
+                    sensor.Type.Equals("Temperature", StringComparison.OrdinalIgnoreCase) &&
+                    sensor.Value is > 0 and < 130)
                 .ToArray();
 
             var preferredTemperature = temperatures.FirstOrDefault(sensor =>
@@ -91,13 +112,15 @@ public sealed class LibreHardwareSensorService : IDisposable
             var cpuClocks = cpuSensors
                 .Where(sensor =>
                     sensor.Type.Equals("Clock", StringComparison.OrdinalIgnoreCase) &&
-                    sensor.Value > 0 &&
+                    sensor.Value is > 0 and < 10000 &&
                     sensor.Sensor.Contains("Core", StringComparison.OrdinalIgnoreCase))
-                .Select(sensor => sensor.Value)
+                .Select(sensor => sensor.Value!.Value)
                 .ToArray();
 
             var cpuPowerSensors = cpuSensors
-                .Where(sensor => sensor.Type.Equals("Power", StringComparison.OrdinalIgnoreCase))
+                .Where(sensor =>
+                    sensor.Type.Equals("Power", StringComparison.OrdinalIgnoreCase) &&
+                    sensor.Value is > 0.1 and < 300)
                 .ToArray();
 
             var preferredPower = cpuPowerSensors.FirstOrDefault(sensor =>
@@ -109,36 +132,33 @@ public sealed class LibreHardwareSensorService : IDisposable
                     .Where(sensor =>
                         sensor.SensorType.ToString().Equals("Fan", StringComparison.OrdinalIgnoreCase) &&
                         sensor.Value.HasValue &&
-                        sensor.Value.Value > 0)
+                        float.IsFinite(sensor.Value.Value) &&
+                        sensor.Value.Value >= 0)
                     .Select(sensor => new FanSensorReading(
                         device.Name,
                         sensor.Name,
                         sensor.Value!.Value)))
                 .OrderBy(fan => fan.HardwareName, StringComparer.OrdinalIgnoreCase)
                 .ThenBy(fan => fan.SensorName, StringComparer.OrdinalIgnoreCase)
-                .Take(6)
+                .Take(8)
                 .ToArray();
 
-            var hasCpuData = preferredTemperature is not null ||
-                             cpuClocks.Length > 0 ||
-                             preferredPower is not null;
+            var diagnosticPath = _diagnosticWritten
+                ? DiagnosticPath
+                : WriteDiagnosticReport(hardware, cpuDevices, cpuSensors, fans, updateFailures);
 
-            string status;
-            if (!hasCpuData && fans.Length == 0)
-            {
-                status = updateFailures > 0
-                    ? "Sensor library initialized, but hardware readings are unavailable. Some sensors may require Administrator access."
-                    : "No CPU temperature or fan sensors were exposed by this laptop's current hardware interfaces.";
-            }
-            else
-            {
-                var parts = new List<string> { "LibreHardwareMonitor · read-only" };
-                if (updateFailures > 0)
-                    parts.Add($"{updateFailures} sensor provider(s) unavailable");
-                if (fans.Length == 0)
-                    parts.Add("fan RPM not exposed");
-                status = string.Join(" · ", parts);
-            }
+            _diagnosticWritten = true;
+
+            var populatedCpuSensors = cpuSensors.Count(sensor => sensor.Value.HasValue);
+            var status = $"LibreHardwareMonitor · {hardware.Length} hardware nodes · " +
+                         $"{populatedCpuSensors} CPU sensor values · {fans.Length} fan sensors";
+
+            if (updateFailures > 0)
+                status += $" · {updateFailures} update failures";
+            if (preferredTemperature is null)
+                status += " · CPU temperature unavailable";
+            if (fans.Length == 0)
+                status += " · fan RPM not exposed";
 
             return new HardwareSensorSnapshot(
                 CpuTemperatureC: preferredTemperature?.Value,
@@ -146,7 +166,89 @@ public sealed class LibreHardwareSensorService : IDisposable
                 CpuClockMHz: cpuClocks.Length > 0 ? cpuClocks.Average() : null,
                 CpuPackagePowerW: preferredPower?.Value,
                 Fans: fans,
-                StatusMessage: status);
+                StatusMessage: status,
+                DiagnosticPath: diagnosticPath);
+        }
+    }
+
+    private static string WriteOpenFailureReport(string error)
+    {
+        try
+        {
+            Directory.CreateDirectory(Path.GetDirectoryName(DiagnosticPath)!);
+            File.WriteAllText(
+                DiagnosticPath,
+                $"G6 Control Center hardware sensor diagnostic{Environment.NewLine}" +
+                $"Timestamp: {DateTimeOffset.Now:O}{Environment.NewLine}" +
+                $"Elevated: {IsElevated()}{Environment.NewLine}" +
+                $"Computer.Open failed: {error}{Environment.NewLine}");
+            return DiagnosticPath;
+        }
+        catch
+        {
+            return string.Empty;
+        }
+    }
+
+    private static string WriteDiagnosticReport(
+        IReadOnlyList<IHardware> hardware,
+        IReadOnlyList<IHardware> cpuDevices,
+        IReadOnlyList<SensorObservation> cpuSensors,
+        IReadOnlyList<FanSensorReading> fans,
+        int updateFailures)
+    {
+        try
+        {
+            Directory.CreateDirectory(Path.GetDirectoryName(DiagnosticPath)!);
+
+            var lines = new List<string>
+            {
+                "G6 Control Center hardware sensor diagnostic",
+                $"Timestamp: {DateTimeOffset.Now:O}",
+                $"Elevated: {IsElevated()}",
+                $"Hardware nodes: {hardware.Count}",
+                $"CPU nodes: {cpuDevices.Count}",
+                $"CPU sensor entries: {cpuSensors.Count}",
+                $"CPU sensor entries with values: {cpuSensors.Count(sensor => sensor.Value.HasValue)}",
+                $"Fan sensor entries with values: {fans.Count}",
+                $"Hardware update failures: {updateFailures}",
+                string.Empty,
+                "HARDWARE AND SENSOR INVENTORY"
+            };
+
+            foreach (var device in hardware)
+            {
+                lines.Add($"[{device.HardwareType}] {device.Name}");
+
+                foreach (var sensor in device.Sensors)
+                {
+                    var value = sensor.Value.HasValue && float.IsFinite(sensor.Value.Value)
+                        ? sensor.Value.Value.ToString("0.##", CultureInfo.InvariantCulture)
+                        : "N/A";
+
+                    lines.Add($"  - {sensor.SensorType}: {sensor.Name} = {value}");
+                }
+            }
+
+            File.WriteAllLines(DiagnosticPath, lines);
+            return DiagnosticPath;
+        }
+        catch
+        {
+            return string.Empty;
+        }
+    }
+
+    private static bool IsElevated()
+    {
+        try
+        {
+            using var identity = WindowsIdentity.GetCurrent();
+            return new WindowsPrincipal(identity).IsInRole(WindowsBuiltInRole.Administrator);
+        }
+        catch
+        {
+            return false;
         }
     }
 

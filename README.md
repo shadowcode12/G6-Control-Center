@@ -6,7 +6,7 @@ A Windows-first, independent control center for the GIGABYTE G6 KF. The active W
 
 ## Windows application
 
-### Current milestone: v0.3.0 — CPU/GPU telemetry and hardware sensor discovery
+### Current milestone: v0.3.1 — CPU/GPU telemetry and sensor diagnostics
 
 - WPF application using an MVVM-style structure.
 - CPU utilization through Windows `GetSystemTimes`.
@@ -15,6 +15,8 @@ A Windows-first, independent control center for the GIGABYTE G6 KF. The active W
 - System uptime through `Environment.TickCount64`.
 - NVIDIA GPU name, utilization, temperature, power draw, VRAM usage, graphics clock, memory clock and driver version through `nvidia-smi`.
 - CPU temperature, reported core clock, CPU package power and fan RPM discovery through `LibreHardwareMonitorLib` 0.9.6.
+- A one-time hardware inventory is written to `%LOCALAPPDATA%\\G6ControlCenter\\Logs\\hardware-sensors.log`, including the detected hardware nodes, sensor names, types, values and whether the process was elevated.
+- Zero/invalid CPU package-power placeholders are shown as N/A rather than as a real 0.0 W reading.
 - Hardware sensor polling runs on a background task every 5 seconds; NVIDIA polling runs every 3 seconds.
 - Missing or inaccessible sensors are displayed as N/A/not exposed. No temperature or fan values are estimated.
 - Startup and unhandled-exception logging to `%LOCALAPPDATA%\G6ControlCenter\Logs\startup.log`.
@@ -49,7 +51,7 @@ If the application exits without showing a window, inspect:
 %LOCALAPPDATA%\G6ControlCenter\Logs\startup.log
 ```
 
-The hardware sensor panel also displays the sensor library's current availability status.
+The hardware sensor panel also displays the sensor library's current availability status. The first sensor scan writes a complete inventory to `%LOCALAPPDATA%\\G6ControlCenter\\Logs\\hardware-sensors.log`; this report helps distinguish a missing sensor from a permission or hardware-provider issue.
 
 ## Safety boundaries
 

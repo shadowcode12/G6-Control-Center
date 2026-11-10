@@ -15,8 +15,9 @@ public sealed record HardwareSensorSnapshot(
     double? CpuClockMHz,
     double? CpuPackagePowerW,
     IReadOnlyList<FanSensorReading> Fans,
-    string StatusMessage)
+    string StatusMessage,
+    string DiagnosticPath)
 {
     public static HardwareSensorSnapshot Unavailable(string message) =>
-        new(null, "Not exposed", null, null, Array.Empty<FanSensorReading>(), message);
+        new(null, "Not exposed", null, null, Array.Empty<FanSensorReading>(), message, string.Empty);
 }

@@ -216,27 +216,31 @@ public sealed class MainViewModel : ObservableObject, IDisposable
 
     private void ApplyHardwareSensorSnapshot(HardwareSensorSnapshot snapshot)
     {
-        HardwareSensorStatus = snapshot.StatusMessage;
+        HardwareSensorStatus = string.IsNullOrWhiteSpace(snapshot.DiagnosticPath)
+            ? snapshot.StatusMessage
+            : $"{snapshot.StatusMessage} · report saved";
 
         CpuTemperatureValue = snapshot.CpuTemperatureC is double temperature
             ? $"{temperature:0}°C"
             : "N/A";
         CpuTemperatureDetail = snapshot.CpuTemperatureC is not null
             ? $"Source: {snapshot.CpuTemperatureSource}"
-            : snapshot.CpuTemperatureSource;
+            : "Not reported by the current sensor interface";
 
         CpuClockValue = snapshot.CpuClockMHz is double clock
             ? $"{clock / 1000:0.00} GHz"
             : "N/A";
 
-        CpuPowerValue = snapshot.CpuPackagePowerW is double power
+        CpuPowerValue = snapshot.CpuPackagePowerW is double power && power > 0.1
             ? $"{power:0.0} W"
             : "N/A";
 
         if (snapshot.Fans.Count == 0)
         {
             FanSpeedValue = "Not exposed";
-            FanSpeedDetail = "No fan RPM sensors reported by the current controller interface.";
+            FanSpeedDetail = string.IsNullOrWhiteSpace(snapshot.DiagnosticPath)
+                ? "No fan RPM sensors reported by the current controller interface."
+                : "No fan RPM sensors reported. See hardware-sensors.log for detected devices and sensors.";
         }
         else
         {
