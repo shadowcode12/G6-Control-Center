@@ -37,3 +37,13 @@ Understand the installed GIGABYTE/CLEVO application architecture on the owner's 
 3. Compare temperatures with an independent trusted sensor application under idle and controlled load.
 4. Determine whether the original vendor service exposes read-only CPU and fan telemetry.
 5. Determine which features can be implemented using documented Windows APIs and which require a signed vendor driver or firmware support.
+
+## OEM communication-path investigation (2026-11-11)
+
+- Static inspection of the user's uploaded CC40.exe string tables found InsydeDCHU.dll, GetCurrentCpuSpeed.dll, GetProductdll.dll, NVGPU_DLL.dll, GetDCHU_Data_Integer, GetDCHU_Data_Buffer, SetDCHU_Data, SetDCHU_DataEx, ReadAppSettings, and WriteAppSettings.
+- The same binary contains UI identifiers T_CPUFan_RPM_value, T_GPUFan_RPM_value, T_cpu_temp_value, and CPU_Clock_Value.
+- The package inventory places GetCurrentCpuSpeed.dll and InsydeDCHU.dll beside CC40.exe. A second InsydeDCHU.dll exists in the package's DCHU subfolder.
+- The owner's service inventory shows DCHUService.exe running as Control Center Hotkey Service from the DriverStore.
+- OEM screenshots from the exact G6 KF show CPU temperature, CPU clock and two fan RPM/duty values even though WMI and LibreHardwareMonitor did not expose those readings.
+- A separate public Clevo model analysis documents a possible root/WMI / CLEVO_GET service interface and read-oriented fan getter command names, separate from setter commands 104/105. This is a candidate to validate, not assumed compatible with the G6 KF.
+- That external report warns that its package-12 fan telemetry query writes EC command/data registers as part of the ACPI read transaction. G6 Control Center will not invoke that path until compatibility and side effects are understood and the owner explicitly approves a probe.
