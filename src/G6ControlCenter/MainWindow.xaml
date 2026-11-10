@@ -159,7 +159,7 @@
 
                 <Grid Margin="0,30,0,14">
                     <StackPanel>
-                        <TextBlock Text="PROCESSOR & COOLING" FontSize="10" FontWeight="Bold" Foreground="{StaticResource AccentBrush}" />
+                        <TextBlock Text="PROCESSOR &amp; COOLING" FontSize="10" FontWeight="Bold" Foreground="{StaticResource AccentBrush}" />
                         <TextBlock Text="CPU thermals and fan sensors" FontSize="22" FontWeight="SemiBold" Margin="0,7,0,3" />
                     </StackPanel>
                     <TextBlock Text="{Binding HardwareSensorStatus}" HorizontalAlignment="Right" VerticalAlignment="Center"
