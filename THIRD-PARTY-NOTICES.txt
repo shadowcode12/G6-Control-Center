@@ -1,0 +1,8 @@
+Third-party software notices
+
+LibreHardwareMonitorLib
+- Project: https://github.com/LibreHardwareMonitor/LibreHardwareMonitor
+- License: Mozilla Public License 2.0 (MPL-2.0)
+- NuGet package used by this project: LibreHardwareMonitorLib 0.9.6
+- This project references the library as a dependency and does not modify or redistribute its source code.
+- The upstream license and third-party notices are available in the upstream repository.

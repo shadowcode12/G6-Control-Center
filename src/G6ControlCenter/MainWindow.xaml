@@ -156,6 +156,47 @@
                     </Border>
                 </UniformGrid>
 
+
+                <Grid Margin="0,30,0,14">
+                    <StackPanel>
+                        <TextBlock Text="PROCESSOR & COOLING" FontSize="10" FontWeight="Bold" Foreground="{StaticResource AccentBrush}" />
+                        <TextBlock Text="CPU thermals and fan sensors" FontSize="22" FontWeight="SemiBold" Margin="0,7,0,3" />
+                    </StackPanel>
+                    <TextBlock Text="{Binding HardwareSensorStatus}" HorizontalAlignment="Right" VerticalAlignment="Center"
+                               Foreground="{StaticResource MutedBrush}" FontSize="10" TextWrapping="Wrap" MaxWidth="390" />
+                </Grid>
+
+                <UniformGrid Columns="2">
+                    <Border Style="{StaticResource MetricCard}">
+                        <StackPanel>
+                            <TextBlock Text="CPU TEMPERATURE" FontSize="10" FontWeight="Bold" Foreground="{StaticResource MutedBrush}" />
+                            <TextBlock Text="{Binding CpuTemperatureValue}" FontSize="34" FontWeight="SemiBold" Margin="0,16,0,13" />
+                            <TextBlock Text="{Binding CpuTemperatureDetail}" FontSize="11" Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" />
+                        </StackPanel>
+                    </Border>
+                    <Border Style="{StaticResource MetricCard}">
+                        <StackPanel>
+                            <TextBlock Text="CPU FREQUENCY" FontSize="10" FontWeight="Bold" Foreground="{StaticResource MutedBrush}" />
+                            <TextBlock Text="{Binding CpuClockValue}" FontSize="34" FontWeight="SemiBold" Margin="0,16,0,13" />
+                            <TextBlock Text="Average of reported CPU core clock sensors" FontSize="11" Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" />
+                        </StackPanel>
+                    </Border>
+                    <Border Style="{StaticResource MetricCard}">
+                        <StackPanel>
+                            <TextBlock Text="CPU PACKAGE POWER" FontSize="10" FontWeight="Bold" Foreground="{StaticResource MutedBrush}" />
+                            <TextBlock Text="{Binding CpuPowerValue}" FontSize="34" FontWeight="SemiBold" Margin="0,16,0,13" />
+                            <TextBlock Text="Reported package power; unavailable when not exposed" FontSize="11" Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" />
+                        </StackPanel>
+                    </Border>
+                    <Border Style="{StaticResource MetricCard}">
+                        <StackPanel>
+                            <TextBlock Text="FAN SPEED" FontSize="10" FontWeight="Bold" Foreground="{StaticResource MutedBrush}" />
+                            <TextBlock Text="{Binding FanSpeedValue}" FontSize="19" FontWeight="SemiBold" Margin="0,16,0,13" TextWrapping="Wrap" />
+                            <TextBlock Text="{Binding FanSpeedDetail}" FontSize="11" Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" />
+                        </StackPanel>
+                    </Border>
+                </UniformGrid>
+
                 <Border Background="{StaticResource SurfaceBrush}" CornerRadius="18" Padding="22" Margin="0,0,16,0">
                     <Grid>
                         <Grid.ColumnDefinitions>

@@ -13,6 +13,7 @@ public sealed class MainViewModel : ObservableObject, IDisposable
     private readonly Dispatcher _dispatcher = Dispatcher.CurrentDispatcher;
     private readonly DispatcherTimer _timer;
     private CancellationTokenSource? _gpuPollingCts;
+    private CancellationTokenSource? _hardwarePollingCts;
     private bool _isRunning;
     private string _status = "Ready · read-only monitoring";
     private string _lastUpdated = "Waiting for first sample…";
@@ -38,6 +39,14 @@ public sealed class MainViewModel : ObservableObject, IDisposable
     private string _gpuPowerDetail = "Driver-reported board power";
     private double _gpuUsage;
     private double _gpuMemoryUsage;
+
+    private string _cpuTemperatureValue = "Detecting…";
+    private string _cpuTemperatureDetail = "Hardware sensor scan";
+    private string _cpuClockValue = "—";
+    private string _cpuPowerValue = "—";
+    private string _fanSpeedValue = "Detecting…";
+    private string _fanSpeedDetail = "Fan RPM is shown only when the controller exposes it.";
+    private string _hardwareSensorStatus = "Starting hardware sensor discovery…";
 
     public MainViewModel()
     {
@@ -73,6 +82,14 @@ public sealed class MainViewModel : ObservableObject, IDisposable
     public double GpuUsage { get => _gpuUsage; private set => SetProperty(ref _gpuUsage, value); }
     public double GpuMemoryUsage { get => _gpuMemoryUsage; private set => SetProperty(ref _gpuMemoryUsage, value); }
 
+    public string CpuTemperatureValue { get => _cpuTemperatureValue; private set => SetProperty(ref _cpuTemperatureValue, value); }
+    public string CpuTemperatureDetail { get => _cpuTemperatureDetail; private set => SetProperty(ref _cpuTemperatureDetail, value); }
+    public string CpuClockValue { get => _cpuClockValue; private set => SetProperty(ref _cpuClockValue, value); }
+    public string CpuPowerValue { get => _cpuPowerValue; private set => SetProperty(ref _cpuPowerValue, value); }
+    public string FanSpeedValue { get => _fanSpeedValue; private set => SetProperty(ref _fanSpeedValue, value); }
+    public string FanSpeedDetail { get => _fanSpeedDetail; private set => SetProperty(ref _fanSpeedDetail, value); }
+    public string HardwareSensorStatus { get => _hardwareSensorStatus; private set => SetProperty(ref _hardwareSensorStatus, value); }
+
     public void Start()
     {
         if (_isRunning) return;
@@ -83,6 +100,9 @@ public sealed class MainViewModel : ObservableObject, IDisposable
 
         _gpuPollingCts = new CancellationTokenSource();
         _ = PollGpuAsync(_gpuPollingCts.Token);
+
+        _hardwarePollingCts = new CancellationTokenSource();
+        _ = PollHardwareSensorsAsync(_hardwarePollingCts.Token);
     }
 
     public void Stop()
@@ -90,6 +110,7 @@ public sealed class MainViewModel : ObservableObject, IDisposable
         _timer.Stop();
         _isRunning = false;
         _gpuPollingCts?.Cancel();
+        _hardwarePollingCts?.Cancel();
     }
 
     private void Refresh()
@@ -148,6 +169,84 @@ public sealed class MainViewModel : ObservableObject, IDisposable
             {
                 return;
             }
+        }
+    }
+
+    private async Task PollHardwareSensorsAsync(CancellationToken cancellationToken)
+    {
+        LibreHardwareSensorService? sensorService = null;
+
+        try
+        {
+            while (!cancellationToken.IsCancellationRequested)
+            {
+                HardwareSensorSnapshot snapshot;
+
+                try
+                {
+                    snapshot = await Task.Run(() =>
+                    {
+                        sensorService ??= new LibreHardwareSensorService();
+                        return sensorService.ReadSnapshot();
+                    });
+                }
+                catch (Exception ex)
+                {
+                    snapshot = HardwareSensorSnapshot.Unavailable(
+                        $"Hardware sensor scan failed: {ex.GetType().Name}: {ex.Message}");
+                }
+
+                if (cancellationToken.IsCancellationRequested)
+                    return;
+
+                await _dispatcher.InvokeAsync(() => ApplyHardwareSensorSnapshot(snapshot));
+
+                await Task.Delay(TimeSpan.FromSeconds(5), cancellationToken);
+            }
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            // Normal shutdown.
+        }
+        finally
+        {
+            sensorService?.Dispose();
+        }
+    }
+
+    private void ApplyHardwareSensorSnapshot(HardwareSensorSnapshot snapshot)
+    {
+        HardwareSensorStatus = snapshot.StatusMessage;
+
+        CpuTemperatureValue = snapshot.CpuTemperatureC is double temperature
+            ? $"{temperature:0}°C"
+            : "N/A";
+        CpuTemperatureDetail = snapshot.CpuTemperatureC is not null
+            ? $"Source: {snapshot.CpuTemperatureSource}"
+            : snapshot.CpuTemperatureSource;
+
+        CpuClockValue = snapshot.CpuClockMHz is double clock
+            ? $"{clock / 1000:0.00} GHz"
+            : "N/A";
+
+        CpuPowerValue = snapshot.CpuPackagePowerW is double power
+            ? $"{power:0.0} W"
+            : "N/A";
+
+        if (snapshot.Fans.Count == 0)
+        {
+            FanSpeedValue = "Not exposed";
+            FanSpeedDetail = "No fan RPM sensors reported by the current controller interface.";
+        }
+        else
+        {
+            FanSpeedValue = string.Join(
+                Environment.NewLine,
+                snapshot.Fans.Take(3).Select(fan => $"{fan.SensorName}: {fan.Rpm:0} RPM"));
+
+            FanSpeedDetail = string.Join(
+                " · ",
+                snapshot.Fans.Take(3).Select(fan => fan.HardwareName).Distinct());
         }
     }
 
@@ -216,5 +315,7 @@ public sealed class MainViewModel : ObservableObject, IDisposable
         Stop();
         _gpuPollingCts?.Dispose();
         _gpuPollingCts = null;
+        _hardwarePollingCts?.Dispose();
+        _hardwarePollingCts = null;
     }
 }
