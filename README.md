@@ -98,3 +98,20 @@ docs/
 ## OEM sensor investigation
 
 The repository includes OEM communication-path research notes in docs/OEM-SENSOR-REVERSE-ENGINEERING.md. The notes distinguish evidence from the user's own CC40 package from candidate findings published for a different Clevo model. No vendor DLLs are committed, no WMI methods are invoked by the app, and no ACPI/EC writes are performed.
+
+### Collect exact G6 KF OEM interface evidence
+
+From the repository root in PowerShell:
+
+```powershell
+powershell.exe -ExecutionPolicy Bypass -File .\tools\Collect-ClevoEvidence.ps1
+```
+
+The script saves:
+
+```text
+%USERPROFILE%\Desktop\G6-RE\OEM-Sensor-Inventory.txt
+```
+
+It only inventories WMI classes/instances, PnP devices, services, process modules and candidate DLL metadata. It does not invoke any CLEVO getter/setter method, load a vendor DLL, call DeviceIoControl, or access ACPI/EC. Upload the resulting inventory so the exact G6 KF WMI interface can be mapped before adding a sensor reader.
+
