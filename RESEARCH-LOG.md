@@ -8,8 +8,7 @@ Understand the installed GIGABYTE/CLEVO application architecture on the owner's 
 
 - The visible system interface includes System, FlexiCharger, LED Keyboard and Flexikey modules.
 - The installed `CLEVOCO.FnhotkeysandOSD` package is x64 and contains a `FnKey\CC40\CC40.exe` application.
-- The inspected `CC40.exe` is a PE32+ x64 executable with CLR metadata; its SHA-256 was recorded by the user in the investigation notes.
-- The package inventory includes WPF-related assemblies (`PresentationFramework`, `PresentationCore`, `WindowsBase`, `System.Xaml`), Actipro WPF assemblies and GalaSoft MVVM Light assemblies. This strongly supports a .NET WPF/MVVM design for the CC40 component.
+- The inspected `CC40.exe` is a PE32+ x64 executable with CLR metadata; its package contains WPF-related assemblies, Actipro WPF assemblies and GalaSoft MVVM Light assemblies.
 - The package contains multiple native libraries and helper executables, including names associated with DCHU, HID, NVIDIA, keyboard LED and Intel tuning functionality.
 - `DCHUService.exe` is registered as the Control Center Hotkey Service. `HKClipSvc.exe` is also present in the ControlCenter driver folder.
 

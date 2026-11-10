@@ -113,6 +113,49 @@
                     </Border>
                 </UniformGrid>
 
+
+                <Grid Margin="0,30,0,14">
+                    <StackPanel>
+                        <TextBlock Text="GRAPHICS PROCESSOR" FontSize="10" FontWeight="Bold" Foreground="{StaticResource AccentBrush}" />
+                        <TextBlock Text="NVIDIA telemetry" FontSize="22" FontWeight="SemiBold" Margin="0,7,0,3" />
+                    </StackPanel>
+                    <TextBlock Text="{Binding GpuStatus}" HorizontalAlignment="Right" VerticalAlignment="Center"
+                               Foreground="{StaticResource MutedBrush}" FontSize="10" TextWrapping="Wrap" MaxWidth="360" />
+                </Grid>
+
+                <UniformGrid Columns="2">
+                    <Border Style="{StaticResource MetricCard}">
+                        <StackPanel>
+                            <TextBlock Text="GPU UTILIZATION" FontSize="10" FontWeight="Bold" Foreground="{StaticResource MutedBrush}" />
+                            <TextBlock Text="{Binding GpuUsageValue}" FontSize="34" FontWeight="SemiBold" Margin="0,16,0,13" />
+                            <ProgressBar Style="{StaticResource MetricProgress}" Maximum="100" Value="{Binding GpuUsage, Mode=OneWay}" />
+                            <TextBlock Text="{Binding GpuUsageDetail}" FontSize="11" Foreground="{StaticResource MutedBrush}" Margin="0,12,0,0" TextWrapping="Wrap" />
+                        </StackPanel>
+                    </Border>
+                    <Border Style="{StaticResource MetricCard}">
+                        <StackPanel>
+                            <TextBlock Text="GPU TEMPERATURE" FontSize="10" FontWeight="Bold" Foreground="{StaticResource MutedBrush}" />
+                            <TextBlock Text="{Binding GpuTemperatureValue}" FontSize="34" FontWeight="SemiBold" Margin="0,16,0,13" />
+                            <TextBlock Text="{Binding GpuTemperatureDetail}" FontSize="11" Foreground="{StaticResource MutedBrush}" Margin="0,12,0,0" TextWrapping="Wrap" />
+                        </StackPanel>
+                    </Border>
+                    <Border Style="{StaticResource MetricCard}">
+                        <StackPanel>
+                            <TextBlock Text="GPU MEMORY · VRAM" FontSize="10" FontWeight="Bold" Foreground="{StaticResource MutedBrush}" />
+                            <TextBlock Text="{Binding GpuMemoryValue}" FontSize="30" FontWeight="SemiBold" Margin="0,18,0,14" />
+                            <ProgressBar Style="{StaticResource MetricProgress}" Maximum="100" Value="{Binding GpuMemoryUsage, Mode=OneWay}" />
+                            <TextBlock Text="{Binding GpuMemoryDetail}" FontSize="11" Foreground="{StaticResource MutedBrush}" Margin="0,12,0,0" TextWrapping="Wrap" />
+                        </StackPanel>
+                    </Border>
+                    <Border Style="{StaticResource MetricCard}">
+                        <StackPanel>
+                            <TextBlock Text="GPU POWER" FontSize="10" FontWeight="Bold" Foreground="{StaticResource MutedBrush}" />
+                            <TextBlock Text="{Binding GpuPowerValue}" FontSize="34" FontWeight="SemiBold" Margin="0,16,0,13" />
+                            <TextBlock Text="{Binding GpuPowerDetail}" FontSize="11" Foreground="{StaticResource MutedBrush}" Margin="0,12,0,0" TextWrapping="Wrap" />
+                        </StackPanel>
+                    </Border>
+                </UniformGrid>
+
                 <Border Background="{StaticResource SurfaceBrush}" CornerRadius="18" Padding="22" Margin="0,0,16,0">
                     <Grid>
                         <Grid.ColumnDefinitions>

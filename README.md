@@ -6,21 +6,23 @@ A Windows-first, independent control center for the GIGABYTE G6 KF. The active W
 
 ## Windows application
 
-### Current milestone: v0.1.2 — reliable startup + read-only telemetry
+### Current milestone: v0.2.0 — read-only CPU, memory, storage and NVIDIA telemetry
 
 - WPF application using an MVVM-style structure.
 - CPU utilization through Windows `GetSystemTimes`.
 - Physical memory through `GlobalMemoryStatusEx`.
 - System drive capacity and usage through `DriveInfo`.
 - System uptime through `Environment.TickCount64`.
+- NVIDIA GPU name, utilization, temperature, power draw, VRAM usage, graphics clock, memory clock and driver version through `nvidia-smi`.
+- NVIDIA polling runs asynchronously every 3 seconds with a 3-second process timeout; it does not block the UI thread.
 - Startup and unhandled-exception logging to `%LOCALAPPDATA%\G6ControlCenter\Logs\startup.log`.
-- Standard WPF `StartupUri` lifecycle with `OnMainWindowClose` shutdown.
 - No third-party NuGet packages in the initial Windows application.
 
 ### Requirements
 
 - Windows 10/11 x64
 - .NET 10 SDK
+- NVIDIA driver and `nvidia-smi.exe` for NVIDIA telemetry (GPU metrics show N/A when the NVIDIA utility/device is unavailable)
 - Visual Studio with the .NET desktop development workload (optional; VS Code + SDK is sufficient)
 
 ### Build and run (PowerShell)
@@ -52,35 +54,37 @@ Share the log together with the output of `dotnet run --no-build --project .\src
 
 ## Safety boundaries
 
-The current Windows application is monitoring-only. It does **not** write to EC/SMBus/ACPI/HID, change fan curves, set CPU power limits, switch GPU modes, or alter battery charge thresholds. It does not load OEM DLLs. Temperature and fan RPM values will be added only after a trustworthy sensor source is validated on this exact laptop. Current telemetry does not require Administrator privileges.
+The current Windows application is monitoring-only. It does **not** write to EC/SMBus/ACPI/HID, change fan curves, set CPU power limits, switch GPU modes, or alter battery charge thresholds. It does not load OEM DLLs. CPU temperature and fan RPM will be added only after a trustworthy sensor source is validated on this exact laptop. NVIDIA telemetry is read-only and uses the vendor's `nvidia-smi` query interface. Current telemetry does not require Administrator privileges.
 
 ## Repository layout
 
 ```text
-G6ControlCenter.sln                 # Windows solution
-src/G6ControlCenter/                 # C# / WPF Windows app
-  Infrastructure/                    # ObservableObject base
-  Models/                             # Immutable telemetry models
-  Services/                           # Read-only Windows metrics
-  ViewModels/                         # Dashboard state and bindings
+G6ControlCenter.sln
+src/G6ControlCenter/
+  Infrastructure/
+  Models/
+  Services/
+  ViewModels/
 app/                                  # Earlier PySide6 prototype (preserved)
-docs/                                 # Research notes and diagnostic guidance
-.github/workflows/windows-build.yml  # Windows CI build
+docs/
+.github/workflows/windows-build.yml
 ```
 
 ## Roadmap
 
-1. Reliable app startup and read-only telemetry.
-2. Exact hardware inventory and sensor-source validation.
-3. Read-only device capability discovery.
-4. Hardware abstraction layer with per-feature capability gates.
-5. Carefully scoped controls with bounds, confirmation, rollback and audit logs.
-6. Packaging, diagnostics and background resource profiling.
+1. Reliable app startup and Windows read-only telemetry.
+2. CPU and NVIDIA GPU telemetry.
+3. Exact hardware inventory and sensor-source validation.
+4. Read-only device capability discovery.
+5. Hardware abstraction layer with per-feature capability gates.
+6. Carefully scoped controls with bounds, confirmation, rollback and audit logs.
+7. Packaging, diagnostics and background resource profiling.
 
 ## Development principles
 
-- Prefer documented Windows APIs over undocumented register writes.
+- Prefer documented Windows APIs and NVIDIA's read-only query interface over undocumented register writes.
 - Keep telemetry lightweight and rate-limited.
 - Hardware writes remain disabled until device-specific protocols are verified.
+- Display unavailable sensor readings as unavailable; never invent or silently substitute values.
 - Separate confirmed observations from hypotheses in research notes.
 - Preserve the ability to revert every control change.
