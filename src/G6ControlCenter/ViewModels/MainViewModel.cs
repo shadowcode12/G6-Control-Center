@@ -27,6 +27,7 @@ public sealed class MainViewModel : ObservableObject, IDisposable
     private double _cpuUsage;
     private double _memoryUsage;
     private double _driveUsage;
+    private double? _hardwareCpuClockMHz;
 
     private string _gpuName = "Detecting NVIDIA GPU…";
     private string _gpuStatus = "Waiting for NVIDIA driver telemetry…";
@@ -131,11 +132,19 @@ public sealed class MainViewModel : ObservableObject, IDisposable
             DriveDetail = $"{snapshot.SystemDriveUsedGiB:0.0} GB used of {snapshot.SystemDriveTotalGiB:0.0} GB · {snapshot.SystemDriveName}";
             UptimeValue = FormatUptime(snapshot.Uptime);
 
-            var effectiveClockMHz = _cpuClock.TryReadEffectiveClockMHz();
-            CpuClockValue = effectiveClockMHz is double clockMHz
-                ? $"{clockMHz:0} MHz"
-                : "N/A";
-            CpuClockDetail = _cpuClock.StatusMessage;
+            if (_hardwareCpuClockMHz is double hardwareClockMHz)
+            {
+                CpuClockValue = $"{hardwareClockMHz:0} MHz";
+                CpuClockDetail = "Hardware-reported CPU core clock sensor";
+            }
+            else
+            {
+                var effectiveClockMHz = _cpuClock.TryReadEffectiveClockMHz();
+                CpuClockValue = effectiveClockMHz is double clockMHz
+                    ? $"{clockMHz:0} MHz"
+                    : "N/A";
+                CpuClockDetail = _cpuClock.StatusMessage;
+            }
 
             LastUpdated = $"Updated {snapshot.SampledAt:HH:mm:ss}";
             Status = "Online · read-only monitoring";
@@ -237,7 +246,8 @@ public sealed class MainViewModel : ObservableObject, IDisposable
             ? $"Source: {snapshot.CpuTemperatureSource}"
             : "Not reported by the current sensor interface";
 
-        if (snapshot.CpuClockMHz is double hardwareClock)
+        _hardwareCpuClockMHz = snapshot.CpuClockMHz;
+        if (_hardwareCpuClockMHz is double hardwareClock)
         {
             CpuClockValue = $"{hardwareClock:0} MHz";
             CpuClockDetail = "Hardware-reported CPU core clock sensor";
