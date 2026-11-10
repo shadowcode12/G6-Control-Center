@@ -1,107 +1,269 @@
-# Read-only inventory of the OEM Clevo/Insyde sensor interface.
-# This script does NOT invoke WMI methods, load vendor DLLs, call DeviceIoControl,
-# access ACPI _DSM, or write to EC/SMBus.
+# Read-only evidence collector for the GIGABYTE G6 KF / CLEVO-Insyde stack.
+# It inventories devices, services, WMI class metadata, process modules, INF files,
+# and local vendor binary metadata. It DOES NOT invoke any WMI methods, load any
+# vendor DLL, issue IOCTLs, call ACPI _DSM, or write to EC/SMBus.
 
+[CmdletBinding()]
+param(
+    [string]$OutputDirectory = "$env:USERPROFILE\Desktop\G6-RE\OEM-Sensor-Evidence"
+)
+
+Set-StrictMode -Version Latest
 $ErrorActionPreference = "Continue"
-$OutDir = Join-Path $env:USERPROFILE "Desktop\G6-RE"
-$OutFile = Join-Path $OutDir "OEM-Sensor-Inventory.json"
-New-Item -ItemType Directory -Force -Path $OutDir | Out-Null
 
-$report = [ordered]@{
+$BinaryDirectory = Join-Path $OutputDirectory "VendorBinaries"
+$DriverDirectory = Join-Path $OutputDirectory "DriverFiles"
+New-Item -ItemType Directory -Force -Path $BinaryDirectory, $DriverDirectory | Out-Null
+
+$Report = [ordered]@{
     GeneratedAt = (Get-Date).ToString("o")
+    IsAdministrator = $false
     Package = @()
     Services = @()
+    ServiceRegistry = @()
     Processes = @()
     LoadedModules = @()
     AcpiDevices = @()
-    WmiClasses = @()
-    WmiInstances = @()
-    LegacyWmiMethods = @()
+    WmiNamespaceClassCounts = @()
+    RelevantWmiClasses = @()
+    ClevoGetQuery = $null
+    WmiErrors = @()
+    DeviceProperties = @()
+    DriverInfDetails = @()
     CandidateBinaries = @()
     Errors = @()
+    Safety = @(
+        "Inventory only. No custom WMI method was invoked.",
+        "No vendor DLL was loaded into this PowerShell process.",
+        "No DeviceIoControl, ACPI _DSM, EC/SMBus access, fan setter, or power setter was invoked.",
+        "Vendor binaries are copied locally for static analysis only and must not be committed to the public Git repository."
+    )
 }
 
+function Add-ErrorRecord {
+    param([string]$Stage, [string]$Message)
+    $script:Report.Errors += [pscustomobject]@{
+        Stage = $Stage
+        Message = $Message
+    }
+}
+
+function Add-CandidateFile {
+    param(
+        [string]$Label,
+        [string]$Path,
+        [string]$DestinationDirectory
+    )
+
+    if ([string]::IsNullOrWhiteSpace($Path) -or
+        -not (Test-Path -LiteralPath $Path -PathType Leaf)) {
+        return
+    }
+
+    try {
+        $item = Get-Item -LiteralPath $Path -ErrorAction Stop
+        $hash = Get-FileHash -LiteralPath $Path -Algorithm SHA256 -ErrorAction Stop
+        $signature = Get-AuthenticodeSignature -FilePath $Path -ErrorAction SilentlyContinue
+        $version = $item.VersionInfo
+
+        $copyName = ("{0}_{1}" -f ($Label -replace '[^A-Za-z0-9_-]', '_'), $item.Name)
+        $destination = Join-Path $DestinationDirectory $copyName
+        Copy-Item -LiteralPath $Path -Destination $destination -Force -ErrorAction Stop
+
+        $signer = $null
+        $signatureStatus = "Unavailable"
+        if ($null -ne $signature) {
+            $signatureStatus = [string]$signature.Status
+            if ($null -ne $signature.SignerCertificate) {
+                $signer = $signature.SignerCertificate.Subject
+            }
+        }
+
+        $script:Report.CandidateBinaries += [pscustomobject]@{
+            Label = $Label
+            OriginalPath = $Path
+            FileName = $item.Name
+            Length = $item.Length
+            FileVersion = $version.FileVersion
+            ProductVersion = $version.ProductVersion
+            Company = $version.CompanyName
+            SHA256 = $hash.Hash
+            SignatureStatus = $signatureStatus
+            Signer = $signer
+            LocalCopy = $destination
+        }
+    } catch {
+        Add-ErrorRecord "Binary copy/metadata: $Path" $_.Exception.Message
+    }
+}
+
+# Elevation state.
 try {
-    $packages = @(Get-AppxPackage -Name "CLEVOCO.FnhotkeysandOSD" -ErrorAction Stop)
-    $report.Package = @($packages | Select-Object Name, Version, PackageFullName, InstallLocation)
+    $identity = [Security.Principal.WindowsIdentity]::GetCurrent()
+    $principal = [Security.Principal.WindowsPrincipal]::new($identity)
+    $Report.IsAdministrator = $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
 } catch {
-    $report.Errors += "Appx package query: $($_.Exception.Message)"
+    Add-ErrorRecord "Elevation" $_.Exception.Message
 }
 
+# Exact AppX package location.
 $installRoot = $null
-if ($report.Package.Count -gt 0) {
-    $installRoot = $report.Package[0].InstallLocation
+try {
+    $package = Get-AppxPackage -Name "CLEVOCO.FnhotkeysandOSD" -ErrorAction Stop |
+        Sort-Object Version -Descending |
+        Select-Object -First 1
+
+    if ($package) {
+        $installRoot = $package.InstallLocation
+        $Report.Package = @([pscustomobject]@{
+            Name = $package.Name
+            Version = $package.Version.ToString()
+            PackageFullName = $package.PackageFullName
+            InstallLocation = $package.InstallLocation
+        })
+    }
+} catch {
+    Add-ErrorRecord "AppX package" $_.Exception.Message
 }
 
 $cc40Root = if ($installRoot) { Join-Path $installRoot "FnKey\CC40" } else { $null }
 $dchuRoot = if ($installRoot) { Join-Path $installRoot "FnKey\DCHU" } else { "C:\Program Files (x86)\ControlCenter\DCHU" }
 
+# Services and their registry configuration.
 try {
-    $report.Services = @(
+    $Report.Services = @(
         Get-CimInstance Win32_Service |
         Where-Object {
-            $_.Name -match "DCHU|HKClip" -or
-            $_.DisplayName -match "Control Center Hotkey|HotKey Clipboard"
+            $_.Name -match "DCHU|HKClip|AcpiBridge" -or
+            $_.DisplayName -match "Control Center Hotkey|HotKey Clipboard|ACPI Bridge"
         } |
         Select-Object Name, DisplayName, State, StartMode, PathName
     )
 } catch {
-    $report.Errors += "Service query: $($_.Exception.Message)"
+    Add-ErrorRecord "Service inventory" $_.Exception.Message
 }
 
+foreach ($service in $Report.Services) {
+    try {
+        $key = "HKLM:\SYSTEM\CurrentControlSet\Services\$($service.Name)"
+        if (Test-Path $key) {
+            $properties = Get-ItemProperty -LiteralPath $key
+            $Report.ServiceRegistry += [pscustomobject]@{
+                Name = $service.Name
+                ImagePath = $properties.ImagePath
+                Type = $properties.Type
+                Start = $properties.Start
+                DisplayName = $properties.DisplayName
+                ParametersPath = Join-Path $key "Parameters"
+            }
+        }
+    } catch {
+        Add-ErrorRecord "Service registry $($service.Name)" $_.Exception.Message
+    }
+}
+
+# Keep the OEM Control Center open while collecting so CC40.exe appears here.
 try {
-    $report.Processes = @(
+    $processRows = @(
         Get-CimInstance Win32_Process |
-        Where-Object { $_.Name -match "^(CC40|DCHUService|HKClipSvc)\.exe$" } |
+        Where-Object {
+            $_.Name -match "^(CC40|DCHUService|HKClipSvc|FnKey|cc30wk|FanSpeedSetting)\.exe$"
+        } |
         Select-Object Name, ProcessId, ExecutablePath, CommandLine
     )
+    $Report.Processes = $processRows
 
-    foreach ($entry in $report.Processes) {
+    foreach ($row in $processRows) {
+        if (-not $row.ProcessId) { continue }
         try {
-            $proc = Get-Process -Id ([int]$entry.ProcessId) -ErrorAction Stop
+            $proc = Get-Process -Id ([int]$row.ProcessId) -ErrorAction Stop
             foreach ($module in $proc.Modules) {
-                $report.LoadedModules += [pscustomobject]@{
-                    Process = $entry.Name
-                    PID = $entry.ProcessId
-                    Module = $module.ModuleName
-                    Path = $module.FileName
+                $Report.LoadedModules += [pscustomobject]@{
+                    ProcessName = $row.Name
+                    ProcessId = $row.ProcessId
+                    ModuleName = $module.ModuleName
+                    FileName = $module.FileName
                 }
             }
         } catch {
-            $report.Errors += "Module list for PID $($entry.ProcessId): $($_.Exception.Message)"
+            Add-ErrorRecord "Loaded modules for PID $($row.ProcessId)" $_.Exception.Message
         }
     }
 } catch {
-    $report.Errors += "Process query: $($_.Exception.Message)"
+    Add-ErrorRecord "Process/module inventory" $_.Exception.Message
 }
 
+# Discover CLV0001, CLV0002, and the ACPI WMI mapper device PNP0C14.
 try {
-    $report.AcpiDevices = @(
-        Get-PnpDevice -PresentOnly |
-        Where-Object { $_.InstanceId -match "^ACPI\\CLV000[12]" } |
+    $deviceRows = @(
+        Get-PnpDevice -PresentOnly -ErrorAction Stop |
+        Where-Object {
+            $_.InstanceId -match "^ACPI\\(CLV0001|CLV0002|PNP0C14)" -or
+            $_.FriendlyName -match "ACPI Bridge|ACPI WMI|DCHU|Clevo"
+        } |
         Select-Object Status, Class, FriendlyName, InstanceId, Problem
     )
+    $Report.AcpiDevices = $deviceRows
+
+    $propertyKeys = @(
+        "DEVPKEY_Device_HardwareIds",
+        "DEVPKEY_Device_Service",
+        "DEVPKEY_Device_DriverInfPath",
+        "DEVPKEY_Device_DriverVersion",
+        "DEVPKEY_Device_DriverProvider",
+        "DEVPKEY_Device_DriverDesc",
+        "DEVPKEY_Device_Manufacturer",
+        "DEVPKEY_Device_ClassGuid",
+        "DEVPKEY_Device_UpperFilters",
+        "DEVPKEY_Device_LowerFilters"
+    )
+
+    foreach ($device in $deviceRows) {
+        $values = [ordered]@{
+            InstanceId = $device.InstanceId
+            FriendlyName = $device.FriendlyName
+        }
+
+        foreach ($keyName in $propertyKeys) {
+            try {
+                $property = Get-PnpDeviceProperty -InstanceId $device.InstanceId -KeyName $keyName -ErrorAction Stop
+                $values[$keyName] = $property.Data
+            } catch {
+                # Optional property; absence is not an error condition.
+            }
+        }
+
+        $Report.DeviceProperties += [pscustomobject]$values
+    }
 } catch {
-    $report.Errors += "PnP query: $($_.Exception.Message)"
+    Add-ErrorRecord "PnP device inventory" $_.Exception.Message
 }
 
-# Discover the WMI class and its method/property signatures only.
-# No CLEVO_GET methods are invoked by this script.
+# WMI class metadata only. Enumerate root\WMI classes instead of assuming CLEVO_GET exists.
 try {
-    $classes = @(Get-CimClass -Namespace "root\WMI" |
-        Where-Object { $_.CimClassName -match "CLEVO|DCHU" })
+    $allWmiClasses = @(Get-CimClass -Namespace "root\WMI" -ErrorAction Stop)
+    $Report.WmiNamespaceClassCounts += [pscustomobject]@{
+        Namespace = "root\WMI"
+        ClassCount = $allWmiClasses.Count
+    }
 
-    foreach ($class in $classes) {
+    $patterns = "CLEVO|DCHU|ACPI|FAN|THERM|PNP0C14|INSYDE"
+    foreach ($class in ($allWmiClasses | Where-Object { $_.CimClassName -match $patterns })) {
         $methodRows = @()
         foreach ($method in $class.CimClassMethods) {
             $parameters = @()
             foreach ($parameter in $method.Parameters) {
-                $parameters += "$($parameter.Name):$($parameter.CimType)"
+                $parameters += [pscustomobject]@{
+                    Name = $parameter.Name
+                    CimType = [string]$parameter.CimType
+                    Flags = [string]$parameter.Flags
+                }
             }
+
             $methodRows += [pscustomobject]@{
                 Name = $method.Name
                 ReturnType = [string]$method.ReturnType
-                Parameters = ($parameters -join ", ")
+                Parameters = $parameters
             }
         }
 
@@ -109,101 +271,205 @@ try {
         foreach ($property in $class.CimClassProperties) {
             $propertyRows += [pscustomobject]@{
                 Name = $property.Name
-                Type = [string]$property.CimType
+                CimType = [string]$property.CimType
+                Flags = [string]$property.Flags
             }
         }
 
-        $report.WmiClasses += [pscustomobject]@{
+        $Report.RelevantWmiClasses += [pscustomobject]@{
             Namespace = "root\WMI"
             Name = $class.CimClassName
             Methods = $methodRows
             Properties = $propertyRows
         }
+    }
+} catch {
+    $Report.WmiErrors += "Get-CimClass root\WMI: $($_.Exception.Message)"
+}
 
-        try {
-            $instances = @(Get-CimInstance -Namespace "root\WMI" -ClassName $class.CimClassName)
-            foreach ($instance in $instances) {
-                $report.WmiInstances += [pscustomobject]@{
-                    Class = $class.CimClassName
-                    InstanceName = $instance.InstanceName
-                    Data = $instance.Data
-                }
-            }
-        } catch {
-            $report.Errors += "WMI instance $($class.CimClassName): $($_.Exception.Message)"
+# Cross-check using the legacy WMI API; still metadata/query only.
+try {
+    $legacyClasses = @(Get-WmiObject -Namespace "root\WMI" -List -ErrorAction Stop |
+        Where-Object { $_.__CLASS -match "CLEVO|DCHU|ACPI|FAN|THERM|PNP0C14|INSYDE" })
+
+    foreach ($legacyClass in $legacyClasses) {
+        $Report.RelevantWmiClasses += [pscustomobject]@{
+            Namespace = "root\WMI (legacy WMI enumeration)"
+            Name = $legacyClass.__CLASS
+            Methods = @($legacyClass.Methods | ForEach-Object {
+                [pscustomobject]@{ Name = $_.Name; ReturnType = [string]$_.ReturnType }
+            })
+            Properties = @($legacyClass.Properties | ForEach-Object {
+                [pscustomobject]@{ Name = $_.Name; CimType = [string]$_.Type }
+            })
         }
     }
 } catch {
-    $report.Errors += "WMI class discovery: $($_.Exception.Message)"
+    $Report.WmiErrors += "Get-WmiObject root\WMI list: $($_.Exception.Message)"
 }
 
-# Also query the legacy WMI class metadata through the WMI class accelerator.
-# This enumerates method names only; it does not invoke them.
+# Query the candidate instance without invoking methods.
 try {
-    $legacyClass = [wmiclass]"root\WMI:CLEVO_GET"
-    $report.LegacyWmiMethods = @(
-        $legacyClass.Methods | ForEach-Object {
-            [pscustomobject]@{
-                Name = $_.Name
-                Origin = $_.Origin
-            }
-        }
-    )
+    $instances = @(Get-CimInstance -Namespace "root\WMI" -ClassName "CLEVO_GET" -ErrorAction Stop)
+    $Report.ClevoGetQuery = [pscustomobject]@{
+        Found = $true
+        Count = $instances.Count
+        Instances = @($instances | Select-Object InstanceName, Data)
+    }
 } catch {
-    $report.Errors += "Legacy CLEVO_GET method inventory: $($_.Exception.Message)"
+    $Report.ClevoGetQuery = [pscustomobject]@{
+        Found = $false
+        Error = $_.Exception.Message
+    }
 }
 
-$paths = @()
-if ($cc40Root) {
-    $paths += (Join-Path $cc40Root "CC40.exe")
-    $paths += (Join-Path $cc40Root "InsydeDCHU.dll")
-    $paths += (Join-Path $cc40Root "GetCurrentCpuSpeed.dll")
-    $paths += (Join-Path $cc40Root "GetProductdll.dll")
-    $paths += (Join-Path $cc40Root "NVGPU_DLL.dll")
+# Resolve the INF(s) used by the ACPI device nodes and record selected directive lines.
+$infPaths = @()
+foreach ($device in $Report.DeviceProperties) {
+    $infProperty = $device.PSObject.Properties["DEVPKEY_Device_DriverInfPath"]
+    $infName = if ($null -ne $infProperty) { $infProperty.Value } else { $null }
+    if (-not [string]::IsNullOrWhiteSpace([string]$infName)) {
+        $fullInfPath = Join-Path "$env:windir\INF" ([string]$infName)
+        if (Test-Path -LiteralPath $fullInfPath) {
+            $infPaths += $fullInfPath
+        }
+    }
 }
-if ($dchuRoot) {
-    $paths += (Join-Path $dchuRoot "InsydeDCHU.dll")
-    $paths += (Join-Path $dchuRoot "GetProductdll.dll")
-}
-$paths += "C:\Program Files (x86)\ControlCenter\DCHU\InsydeDCHU.dll"
 
-# Include the active service executable and adjacent bridge files when its path is discoverable.
-$servicePath = $report.Services |
-    Where-Object { $_.Name -match "DCHU" -and $_.PathName } |
-    Select-Object -First 1 -ExpandProperty PathName
-if ($servicePath) {
+# DriverStore directory is obtained from the running DCHU service path.
+$servicePaths = @($Report.Services | Where-Object { $_.Name -match "DCHU" -and $_.PathName } |
+    ForEach-Object { $_.PathName })
+
+foreach ($servicePath in $servicePaths) {
     $serviceExe = [regex]::Match($servicePath, '^\s*"?(.+?\.exe)"?(?:\s|$)', 'IgnoreCase').Groups[1].Value
     if ($serviceExe -and (Test-Path -LiteralPath $serviceExe)) {
-        $driverDirectory = Split-Path $serviceExe -Parent
-        $paths += $serviceExe
-        $paths += (Join-Path $driverDirectory "AcpiBridge.sys")
-        $paths += (Join-Path $driverDirectory "AcpiBridge.inf")
-    }
-}
-
-foreach ($path in ($paths | Select-Object -Unique)) {
-    if (-not (Test-Path -LiteralPath $path -PathType Leaf)) { continue }
-    try {
-        $file = Get-Item -LiteralPath $path
-        $version = $file.VersionInfo
-        $hash = Get-FileHash -LiteralPath $path -Algorithm SHA256
-        $signature = Get-AuthenticodeSignature -FilePath $path
-        $report.CandidateBinaries += [pscustomobject]@{
-            Path = $path
-            Length = $file.Length
-            FileVersion = $version.FileVersion
-            ProductVersion = $version.ProductVersion
-            Company = $version.CompanyName
-            SHA256 = $hash.Hash
-            SignatureStatus = [string]$signature.Status
-            Signer = if ($signature.SignerCertificate) { $signature.SignerCertificate.Subject } else { $null }
+        $driverStoreDirectory = Split-Path $serviceExe -Parent
+        foreach ($fileName in @("acpibridge.inf","acpibridge1.inf","AcpiBridge.inf","AcpiBridge1.inf")) {
+            $candidate = Join-Path $driverStoreDirectory $fileName
+            if (Test-Path -LiteralPath $candidate) { $infPaths += $candidate }
         }
-    } catch {
-        $report.Errors += "Binary metadata $path : $($_.Exception.Message)"
+
+        foreach ($driverFile in (Get-ChildItem -LiteralPath $driverStoreDirectory -File -ErrorAction SilentlyContinue |
+            Where-Object { $_.Extension -in ".sys", ".inf", ".cat" })) {
+            Add-CandidateFile -Label "DriverStore" -Path $driverFile.FullName -DestinationDirectory $DriverDirectory
+        }
+
+        Add-CandidateFile -Label "DriverStore" -Path $serviceExe -DestinationDirectory $BinaryDirectory
     }
 }
 
-$report | ConvertTo-Json -Depth 10 | Set-Content -LiteralPath $OutFile -Encoding UTF8
-Write-Host "Saved OEM sensor inventory: $OutFile" -ForegroundColor Green
-Write-Host "This script only queried metadata, process modules, PnP devices and WMI class/instance inventory."
-Write-Host "It did NOT invoke a CLEVO_GET method or write to firmware/hardware."
+foreach ($infPath in ($infPaths | Select-Object -Unique)) {
+    try {
+        $lines = @(Select-String -LiteralPath $infPath -Pattern "CLV0001|CLV0002|PNP0C14|AddService|ServiceBinary|DriverVer|Provider|ClassGuid|UpperFilters|LowerFilters" |
+            ForEach-Object { $_.Line.Trim() })
+
+        $Report.DriverInfDetails += [pscustomobject]@{
+            Path = $infPath
+            SHA256 = (Get-FileHash -LiteralPath $infPath -Algorithm SHA256).Hash
+            RelevantLines = $lines
+        }
+
+        Add-CandidateFile -Label "INF" -Path $infPath -DestinationDirectory $DriverDirectory
+    } catch {
+        Add-ErrorRecord "INF inspection: $infPath" $_.Exception.Message
+    }
+}
+
+# The package has separate CC40 and DCHU copies of InsydeDCHU.dll.
+# Preserve both as separate files; do not assume same version means same protocol.
+$candidates = @()
+if ($cc40Root) {
+    $candidates += [pscustomobject]@{ Label = "CC40"; Path = (Join-Path $cc40Root "GetCurrentCpuSpeed.dll") }
+    $candidates += [pscustomobject]@{ Label = "CC40"; Path = (Join-Path $cc40Root "InsydeDCHU.dll") }
+    $candidates += [pscustomobject]@{ Label = "CC40"; Path = (Join-Path $cc40Root "GetProductdll.dll") }
+    $candidates += [pscustomobject]@{ Label = "CC40"; Path = (Join-Path $cc40Root "NVGPU_DLL.dll") }
+}
+if ($dchuRoot) {
+    $candidates += [pscustomobject]@{ Label = "DCHU"; Path = (Join-Path $dchuRoot "InsydeDCHU.dll") }
+    $candidates += [pscustomobject]@{ Label = "DCHU"; Path = (Join-Path $dchuRoot "GetProductdll.dll") }
+}
+$candidates += [pscustomobject]@{ Label = "LegacyDCHU"; Path = "C:\Program Files (x86)\ControlCenter\DCHU\InsydeDCHU.dll" }
+
+foreach ($candidate in $candidates) {
+    Add-CandidateFile -Label $candidate.Label -Path $candidate.Path -DestinationDirectory $BinaryDirectory
+}
+
+# Add app process's actually loaded copies when CC40 is open.
+foreach ($module in $Report.LoadedModules) {
+    if ($module.ModuleName -match "InsydeDCHU|GetCurrentCpuSpeed|GetProductdll|NVGPU_DLL") {
+        Add-CandidateFile -Label "LoadedModule" -Path $module.FileName -DestinationDirectory $BinaryDirectory
+    }
+}
+
+$jsonPath = Join-Path $OutputDirectory "OEM-Sensor-Inventory.json"
+$textPath = Join-Path $OutputDirectory "OEM-Sensor-Inventory.txt"
+$Report | ConvertTo-Json -Depth 14 | Set-Content -LiteralPath $jsonPath -Encoding UTF8
+
+$lines = New-Object System.Collections.Generic.List[string]
+$lines.Add("G6 Control Center - OEM sensor inventory")
+$lines.Add("Generated: $($Report.GeneratedAt)")
+$lines.Add("Elevated: $($Report.IsAdministrator)")
+$lines.Add("")
+$lines.Add("APPX PACKAGE")
+$lines.Add(($Report.Package | Format-List | Out-String).Trim())
+$lines.Add("")
+$lines.Add("SERVICES")
+$lines.Add(($Report.Services | Format-Table -AutoSize | Out-String -Width 220).Trim())
+$lines.Add("")
+$lines.Add("PROCESSES")
+$lines.Add(($Report.Processes | Format-Table -AutoSize | Out-String -Width 220).Trim())
+$lines.Add("")
+$lines.Add("LOADED MODULES")
+$lines.Add(($Report.LoadedModules | Format-Table ProcessName, ModuleName, FileName -AutoSize | Out-String -Width 220).Trim())
+$lines.Add("")
+$lines.Add("ACPI / PNP DEVICES")
+$lines.Add(($Report.DeviceProperties | Format-List | Out-String -Width 220).Trim())
+$lines.Add("")
+$lines.Add("WMI NAMESPACE CLASS COUNTS")
+$lines.Add(($Report.WmiNamespaceClassCounts | Format-Table -AutoSize | Out-String).Trim())
+$lines.Add("")
+$lines.Add("RELEVANT WMI CLASSES / METHODS (METADATA ONLY)")
+foreach ($class in $Report.RelevantWmiClasses) {
+    $lines.Add("Class: $($class.Namespace):$($class.Name)")
+    foreach ($method in $class.Methods) {
+        $parameters = ($method.Parameters | ForEach-Object { "$($_.Name):$($_.CimType)" }) -join ", "
+        $lines.Add("  Method: $($method.Name) -> $($method.ReturnType) ($parameters)")
+    }
+}
+$lines.Add("")
+$lines.Add("CLEVO_GET QUERY (NO METHODS INVOKED)")
+$lines.Add(($Report.ClevoGetQuery | Format-List | Out-String -Width 220).Trim())
+$lines.Add("")
+$lines.Add("WMI ERRORS")
+$lines.Add(($Report.WmiErrors -join [Environment]::NewLine))
+$lines.Add("")
+$lines.Add("DRIVER INF DETAILS")
+foreach ($inf in $Report.DriverInfDetails) {
+    $lines.Add("INF: $($inf.Path)")
+    $lines.Add("SHA256: $($inf.SHA256)")
+    $lines.AddRange([string[]]$inf.RelevantLines)
+}
+$lines.Add("")
+$lines.Add("CANDIDATE BINARIES")
+$lines.Add(($Report.CandidateBinaries | Format-List | Out-String -Width 220).Trim())
+$lines.Add("")
+$lines.Add("ERRORS")
+$lines.Add(($Report.Errors | Format-Table -AutoSize | Out-String -Width 220).Trim())
+$lines.Add("")
+$lines.Add("SAFETY")
+$lines.AddRange([string[]]$Report.Safety)
+$lines | Set-Content -LiteralPath $textPath -Encoding UTF8
+
+$zipPath = "$OutputDirectory.zip"
+if (Test-Path $zipPath) { Remove-Item -LiteralPath $zipPath -Force }
+Compress-Archive -Path (Join-Path $OutputDirectory "*") -DestinationPath $zipPath -Force
+
+Write-Host ""
+Write-Host "G6 KF OEM evidence collection complete." -ForegroundColor Green
+Write-Host "JSON:     $jsonPath"
+Write-Host "Text:     $textPath"
+Write-Host "Binaries: $BinaryDirectory"
+Write-Host "Drivers:  $DriverDirectory"
+Write-Host "ZIP:      $zipPath"
+Write-Host ""
+Write-Host "No WMI method, OEM DLL function, IOCTL, ACPI _DSM, fan setter, or EC write was invoked."

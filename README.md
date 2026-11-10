@@ -101,17 +101,18 @@ The repository includes OEM communication-path research notes in docs/OEM-SENSOR
 
 ### Collect exact G6 KF OEM interface evidence
 
-From the repository root in PowerShell:
+Keep GIGABYTE Control Center open, then run PowerShell as Administrator for the fullest process-module inventory. From the repository root:
 
 ```powershell
-powershell.exe -ExecutionPolicy Bypass -File .\tools\Collect-ClevoEvidence.ps1
+powershell.exe -ExecutionPolicy Bypass -File .\\tools\\Collect-ClevoEvidence.ps1
 ```
 
-The script saves:
+The collector inventories CLV0001, CLV0002 and PNP0C14 device properties, root\\WMI class/method metadata, services, loaded modules, driver INF files and candidate DLL metadata. It does not invoke WMI methods, load vendor DLLs, call DeviceIoControl, or access ACPI/EC.
+
+It saves an evidence bundle at:
 
 ```text
-%USERPROFILE%\Desktop\G6-RE\OEM-Sensor-Inventory.json
+%USERPROFILE%\\Desktop\\G6-RE\\OEM-Sensor-Evidence.zip
 ```
 
-It only inventories WMI classes/instances, PnP devices, services, process modules and candidate DLL metadata. It does not invoke any CLEVO getter/setter method, load a vendor DLL, call DeviceIoControl, or access ACPI/EC. Upload the resulting inventory so the exact G6 KF WMI interface can be mapped before adding a sensor reader.
-
+Vendor binaries and driver files are copied to the local bundle for static analysis only. They are not committed to the public GitHub repository.
