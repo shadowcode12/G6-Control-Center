@@ -141,3 +141,15 @@ Understand the installed GIGABYTE/CLEVO application architecture on the owner's 
 - Default unmatched IOCTL path loads 0xC0000010 (STATUS_INVALID_DEVICE_REQUEST) into R8D before joining common completion path.
 - These offsets are static analysis of the exact local AcpiBridge.sys binary with SHA256 BE879AF2EF1BEAA3AD041C30ABD103C5E9E872D23EA8442B57682BB0D06EA153. No IOCTL has been sent and no device has been opened.
 - Next static check: dump helper entry ranges and map file offsets to RVAs using PAGE section raw pointer 0x3200 and virtual address 0x6000. Relevant helper file offsets: 0x3760, 0x390C, 0x3A7C, 0x3C4C. Also inspect caller setup before 0x4AD0 and common epilogue around 0x4B51–0x4B88.
+
+
+## Helper RVA/VA mapping and external correlation (2026-11-13)
+
+- Using PAGE section mapping (raw pointer 0x3200, virtual address 0x6000, image base 0x140000000), the four helper target file offsets map to:
+  - IOCTL 0x322400: file offset 0x3760 -> RVA 0x6560 -> VA 0x140006560.
+  - IOCTL 0x322404: file offset 0x3A7C -> RVA 0x687C -> VA 0x14000687C.
+  - IOCTL 0x322408: file offset 0x390C -> RVA 0x670C -> VA 0x14000670C.
+  - IOCTL 0x32240C: file offset 0x3C4C -> RVA 0x6A4C -> VA 0x140006A4C.
+- Independent public report for another Clevo/Insyde AcpiBridge build states IOCTL 0x322400 routes to VA 0x140006560, then to an ACPI-evaluation constructor at VA 0x140006000: https://github.com/x-hachiroku/colorful-p15-ta24-linux-fan-controller/blob/main/FAN_CONTROL.md
+- The exact match between our statically decoded 0x322400 branch target and that public report's helper VA strongly corroborates the ACPI _DSM evaluation role. Since it is a different machine/build and no helper body from the user's binary has yet been decoded, mark as strong corroboration rather than final proof.
+- Next inspect byte ranges around file offsets 0x3760, 0x390C, 0x3A7C, 0x3C4C and their preceding 0x40–0x60 bytes to identify helper prologues, call targets and API patterns. No driver call or hardware operation.
