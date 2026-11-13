@@ -250,3 +250,18 @@ User-provided byte ranges now extend the four helper bodies. WDF function table 
 
 - Dump the remaining 0x322400 inner helper bytes at offsets 0x3500–0x3760, ideally 0x3500–0x3600 and 0x3600–0x3760.
 - No additional App Store helper bytes are needed to establish its two operation branches; only deeper cross-reference of the backing-store context is optional.
+
+
+## ACPI complex signature and app-settings ABI cross-check (2026-11-13)
+
+- The 0x322400 internal helper writes the exact ACPI_EVAL_INPUT_BUFFER_COMPLEX_SIGNATURE. In file bytes this is 41 65 69 43; the Windows SDK macro is 'CieA' and evaluates to DWORD 0x43696541. This confirms use of the standard Windows ACPI complex-input structure.
+- The standard structure has Signature, MethodName/MethodNameAsUlong, Size, ArgumentCount, and a variable-length ACPI_METHOD_ARGUMENT array. Microsoft documents this field order and the use of the structure for IOCTL_ACPI_EVAL_METHOD.
+- The first ACPI_METHOD_ARGUMENT is concretely built with Type=2 (BUFFER) and DataLength=16, supporting a 16-byte _DSM UUID argument. The supplied method selector and subsequent 32-bit values/length fields are copied from the Insyde request. The final nested package/buffer argument and argument count still require the remainder of the helper body to be disassembled.
+- App Store operation layout has an independent source-code cross-check in HaseeCtl's AcpiBridge implementation:
+  - Read uses a 12-byte input header, DWORD op=0 and DWORD at offset 4 equal to 0x10000000. As two little-endian 16-bit fields this is offset=0, length=0x1000; output buffer size is 0x1000.
+  - Write uses DWORD op=1, USHORT offset at +4, USHORT data length at +6, then payload at +8.
+  - The local driver's exact 0x32240C branch logic checks op 0/1, enforces the 0x1000 boundary, validates input payload length for writes, and validates/clamps read length to the store/output bounds.
+  - This source-level cross-check supports the local inference that 0=read, 1=write, +4=offset, +6=length, and payload starts at +8. The backing store is 4096 bytes.
+  - Reference implementation: https://github.com/SSRYLJRSS/HaseeCtl/blob/676161faeef390967d0a824ff0c6b060a15e74a2/src/HaseeCtl.Core/Hw/AcpiBridge.cs and its hardware report: https://github.com/SSRYLJRSS/HaseeCtl/blob/676161faeef390967d0a824ff0c6b060a15e74a2/docs/history/report_B_%E7%A1%AC%E4%BB%B6%E4%B8%8E%E5%8D%8F%E8%AE%AE%E9%AA%8C%E8%AF%81.md
+- This app-settings mechanism is not a sensor telemetry API. It holds application settings, including possible Control Center preferences, and should not be used as a CPU temperature/fan RPM reader.
+- Next static task remains 0x322400 inner helper bytes 0x3500–0x3760; the App Store handler is complete enough for its operation format and bounds.
