@@ -210,3 +210,29 @@ The helper writes the exact ACPI_EVAL_INPUT_BUFFER_COMPLEX_SIGNATURE ('CieA') an
 
 Microsoft documents the ACPI_EVAL_INPUT_BUFFER_COMPLEX field layout: https://learn.microsoft.com/en-us/windows-hardware/drivers/ddi/acpiioct/ns-acpiioct-_acpi_eval_input_buffer_complex_v1
 Windows SDK signature macro: https://github.com/tpn/winsdk-10/blob/master/Include/10.0.16299.0/shared/acpiioct.h
+
+
+### Full local ACPI evaluation path identified (2026-11-13)
+
+The exact G6 KF AcpiBridge.sys bytes show that the private user-mode IOCTL 0x322400 is translated into a standard Windows ACPI method request:
+
+- At file offset 0x3587, the driver loads control code 0x0032C004, which is Windows IOCTL_ACPI_EVAL_METHOD.
+- The internal helper constructs an ACPI_EVAL_INPUT_BUFFER_COMPLEX structure with signature 'CieA', method name _DSM and four arguments.
+- The arguments are: (1) 16-byte UUID buffer, type BUFFER (2); (2) revision integer, type INTEGER (0); (3) function/command integer, type INTEGER (0); and (4) PACKAGE_EX (4) containing a nested BUFFER (2) descriptor with a 256-byte payload.
+- The internal request is sent synchronously to the ACPI I/O target. The returned ACPI_EVAL_OUTPUT_BUFFER is checked against signature bytes 'AeoB' (DWORD 0x426F6541) at file offset 0x3679 before parsing.
+- The output buffer structure has Signature, Length, Count and variable-length ACPI_METHOD_ARGUMENT entries, per Microsoft's ACPI DDI documentation.
+
+This establishes the private bridge-to-ACPI transport. It does not establish what the G6 KF firmware does for any specific _DSM function ID or whether that function is side-effect-free.
+
+The ACPI_EVAL_INPUT_BUFFER_COMPLEX signature write begins at file offset 0x33B9 (the earlier 0x33BA offset was one byte late).
+
+References:
+- https://learn.microsoft.com/en-us/windows-hardware/drivers/acpi/evaluating-acpi-control-methods-synchronously
+- https://learn.microsoft.com/en-us/windows-hardware/drivers/ddi/acpiioct/ns-acpiioct-_acpi_eval_input_buffer_complex_v1
+- https://learn.microsoft.com/en-us/windows-hardware/drivers/ddi/acpiioct/ns-acpiioct-_acpi_eval_output_buffer_v1
+- https://learn.microsoft.com/en-us/windows-hardware/drivers/ddi/acpiioct/ns-acpiioct-_acpi_method_argument_v1
+- https://ntdoc.m417z.com/ioctl_acpi_eval_method
+
+### Outstanding outer IOCTL buffer lengths
+
+The inner ACPI input/output buffer structures are distinct from the outer user-mode DeviceIoControl buffers for private IOCTL 0x322400. The previous note's outer input=0x420/output=0x40C is based on a separate same-family implementation; the exact local wrapper body is missing offsets 0x37D0–0x38EB. Keep those outer buffer directions provisional until that gap is inspected.
