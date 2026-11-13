@@ -52,12 +52,11 @@ Understand the installed GIGABYTE/CLEVO application architecture on the owner's 
 
 - The second evidence collection was still non-elevated (IsAdministrator=false). It captured DCHUService.exe, HKClipSvc.exe and FnKey.exe; FnKey.exe loaded GetProductdll.dll and InsydeDCHU.dll from the AppX package's FnKey root. It did not capture CC40.exe or GetCurrentCpuSpeed.dll as loaded modules.
 - The package has separate bridge devices: CLV0001 maps to Insyde AcpiBridge through oem30.inf (1.0.0.7); CLV0002 maps to CLEVO Acpi Bridge1 through oem70.inf (6.0.46.2) and CCDCHUService/DCHUService.exe.
-- root\WMI had 1600 classes but no CLEVO_GET class; the explicit query returned Invalid class. Two Microsoft WmiAcpi PNP0C14 devices were found. No WMI method was invoked.
-- DCHUService.exe contains string literals for CLEVO_GET.InstanceName='ACPI\PNP0C14\0_0' and fan/temperature method names (GetCPUtemp, GetVGA1temp, GetFan12RPM, GetFan34RPM, Fan1Info through Fan4Info), as well as setter names. These strings do not establish live WMI class registration or method compatibility.
+- root\\WMI had 1600 classes but no CLEVO_GET class; the explicit query returned Invalid class. Two Microsoft WmiAcpi PNP0C14 devices were found. No WMI method was invoked.
+- DCHUService.exe contains string literals for CLEVO_GET.InstanceName='ACPI\\PNP0C14\\0_0' and fan/temperature method names (GetCPUtemp, GetVGA1temp, GetFan12RPM, GetFan34RPM, Fan1Info through Fan4Info), as well as setter names. These strings do not establish live WMI class registration or method compatibility.
 - GetCurrentCpuSpeed.dll exports GetBaseSpeed, GetCpuSpeed and GetProcessorPerformance, and imports PDH query/counter APIs. Its embedded strings identify the Processor Information % Processor Performance counter and Win32_Processor MaxClockSpeed WMI property. This confirms a Windows PDH/WMI frequency path separate from DCHU.
 - InsydeDCHU.dll exports GetDCHU_Data_Integer/GetDCHU_Data_Buffer and setters. Static disassembly of GetDCHU_Data_Integer shows an ACPI _DSM request passed through DeviceIoControl (control code 0x322400). Do not invoke until exact G6 KF arguments and side effects are validated.
 - The actually loaded FnKey-root InsydeDCHU.dll is a third distinct hash; it must not be assumed byte-identical to the CC40 or DCHU-subfolder copies.
-
 
 ## Driver-package analysis (2026-11-13)
 
@@ -69,6 +68,7 @@ Understand the installed GIGABYTE/CLEVO application architecture on the owner's 
 - DCHUService.exe contains a CLR header and static strings for both the CLV0001 device-interface path and the absent-on-this-machine CLEVO_GET WMI class, plus CPU/GPU temperature and fan getter/setter names. These strings do not prove that the WMI class or any given method is live/compatible.
 - The bundled AMDRyzenMasterDriver.inf targets Root\\AMDRMDRIVER and is included under an AMD package section; it is not appropriate to install/load for the owner's Intel i7-13620H.
 - Added tools/Test-InsydeBridgeDiscovery.ps1 to enumerate only the CLV0001 interface path via Configuration Manager. It does not open the device or issue IOCTL/ACPI/EC requests.
+
 ## CLV0001 device-interface result and DLL disassembly (2026-11-13)
 
 - The user ran Test-InsydeBridgeDiscovery.ps1: ACPI\\CLV0001\\1 returned Status OK; Configuration Manager result 0; one published interface path was returned for GUID 86994c74-ad43-4812-b7e7-0c420b5c5fd7.
@@ -78,3 +78,12 @@ Understand the installed GIGABYTE/CLEVO application architecture on the owner's 
 - oem30.inf installs CLV0001 using AcpiBridge.sys as a kernel driver. Uploaded AcpiBridge1.sys belongs to oem70.inf/CLV0002, not CLV0001.
 - A separate NH5xAx Clevo analysis documents command 12 as a live fan telemetry package that triggers EC command 0xC0. This is external, model-specific evidence, not yet confirmed for the G6 KF.
 - Added an in-app, non-invasive CLV0001 interface status card and tools/Get-Clv0001DriverInfo.ps1 for local driver metadata.
+
+## Verified installed CLV0001 driver metadata (2026-11-13)
+
+- The user-provided local diagnostic output identifies the running PnP device as ACPI\\CLV0001\\1, FriendlyName "Acpi Bridge", Status OK and ConfigManagerResult 0.
+- Its selected driver is Insyde's oem30.inf, version 1.0.0.7, dated 2021-09-01 05:30:00, with service name AcpiBridge (kernel driver, Running, demand/manual start).
+- The loaded driver image path is C:\\Windows\\System32\\drivers\\AcpiBridge.sys; file and product versions are both 1.0.0.7, company metadata is Insyde Software Corporation, and the Authenticode signature is Valid with signer Microsoft Windows Hardware Compatibility Publisher.
+- The user's local SHA-256 for AcpiBridge.sys is BE879AF2EF1BEAA3AD041C30ABD103C5E9E872D23EA8442B57682BB0D06EA153. This is the first exact identity for the CLV0001 kernel binary in this investigation; it is not the previously supplied AcpiBridge1.sys binary (CLV0002/oem70.inf).
+- The earlier discovery script returned exactly one published interface path for GUID 86994c74-ad43-4812-b7e7-0c420b5c5fd7. Driver identity plus interface publication are now confirmed, but successful CreateFile access, IOCTL semantics, telemetry command IDs, firmware compatibility and side effects remain untested.
+- Next safe step: obtain static PE metadata/imports/strings from this exact installed AcpiBridge.sys without opening the device or invoking driver requests.
