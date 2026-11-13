@@ -172,3 +172,34 @@ Understand the installed GIGABYTE/CLEVO application architecture on the owner's 
   - 0x3A7C helper continuation: 0x3AEC–0x3C4B
   - 0x3C4C helper continuation: 0x3CBC–0x3D5B (adjust upward if this function has not returned yet)
 - All analysis remains static; no device handle has been opened and no IOCTL/WMI/ACPI/EC request has been made.
+
+## AcpiBridge handler body analysis (2026-11-13)
+
+User-provided byte ranges now extend the four helper bodies. WDF function table offsets were cross-checked against a public WDF table mapping (0x868 = WdfRequestRetrieveInputBuffer; 0x870 = WdfRequestRetrieveOutputBuffer) and Microsoft's documented buffer-retrieval APIs. The WDF APIs validate a caller-specified minimum length and return the request's input/output buffer pointer and optionally its length.
+
+### IOCTL 0x322400 / helper VA 0x140006560
+- The helper invokes WdfRequestRetrieveOutputBuffer with minimum length 0x14 (20 bytes) through WDF table slot +0x870.
+- It invokes WdfRequestRetrieveInputBuffer with minimum length 0x420 (1056 bytes) through slot +0x868.
+- It then calls an internal helper at approximately file offset 0x3201 (PAGE VA approximately 0x140006001), and processes returned buffer/length fields.
+- This is consistent with the ACPI _DSM evaluation handler documented by independent Clevo reverse engineering, but the local 0x3201 target and caller's exact IOCTL buffer directions still need direct inspection.
+- Important discrepancy: earlier static notes from the supplied InsydeDCHU.dll recorded DeviceIoControl lengths as input 0x40C and output 0x420. That would not satisfy this driver's statically observed minimum input length 0x420. Re-check the actual DLL call argument order/lengths against the DeviceIoControl prototype before treating those earlier length labels as confirmed; the helper requirements take precedence until reconciled.
+
+### IOCTL 0x322408 / helper VA 0x14000670C
+- The helper uses WDF slot +0x870 (WdfRequestRetrieveOutputBuffer) with minimum output length 4.
+- On its successful path it reads a 32-bit value from the device context at offset +0x1078, stores it to the retrieved output buffer, and writes 4 to the caller-supplied bytes-returned location.
+- This strongly supports the notification-value retrieval interpretation. It does not itself show that the value is CPU/GPU temperature or fan telemetry; likely it is an event/notification value (e.g., hotkey code) based on the companion wait-event path.
+
+### IOCTL 0x322404 / helper VA 0x14000687C
+- The helper uses WDF slot +0x868 (WdfRequestRetrieveInputBuffer) with minimum input length 8, consistent with receiving a pointer-sized user event HANDLE.
+- Device context fields at offsets +0x107C and +0x1080 are used as a registration flag and stored event-object pointer. If a previous event was registered, its referenced object is cleared/released before replacement.
+- It calls the event-object reference path using imported ObReferenceObjectByHandle and ExEventObjectType, with desired access 0x00100002 (SYNCHRONIZE | EVENT_MODIFY_STATE), then stores the referenced event object and sets the registration flag on success.
+- This is strong static evidence that 0x322404 registers/replaces an event object for driver notification. KeSetEvent is imported by this driver and is consistent with a separate signalling path, but its exact caller has not yet been mapped.
+
+### IOCTL 0x32240C / helper VA 0x140006A4C
+- The partial body uses WDF slot +0x870 (output buffer) with minimum length 4 and slot +0x868 (input buffer) with minimum length 12. This is consistent with the app-settings storage protocol seen in other Clevo implementations, but the remainder of this helper must be inspected before declaring its read/write semantics or supported buffer sizes.
+- The user supplied bytes end at 0x3D5B, before this handler's completion path. Continue dumping from file offset 0x3D50 through approximately 0x3E80.
+
+### WDF evidence sources
+- Public WDF API table mapping identifies +0x868 as WdfRequestRetrieveInputBuffer and +0x870 as WdfRequestRetrieveOutputBuffer: https://github.com/TakahiroHaruyama/VDR/blob/main/ida_ioctl_propagate.py
+- Microsoft documents minimum-length validation and returned buffer semantics for WdfRequestRetrieveInputBuffer and WdfRequestRetrieveOutputBuffer: https://learn.microsoft.com/en-us/windows-hardware/drivers/ddi/wdfrequest/nf-wdfrequest-wdfrequestretrieveinputbuffer and https://learn.microsoft.com/en-us/windows-hardware/drivers/ddi/wdfrequest/nf-wdfrequest-wdfrequestretrieveoutputbuffer
+- No device handle has been opened and no IOCTL, WMI method, ACPI _DSM or EC request has been sent.
