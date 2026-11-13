@@ -153,3 +153,22 @@ Understand the installed GIGABYTE/CLEVO application architecture on the owner's 
 - Independent public report for another Clevo/Insyde AcpiBridge build states IOCTL 0x322400 routes to VA 0x140006560, then to an ACPI-evaluation constructor at VA 0x140006000: https://github.com/x-hachiroku/colorful-p15-ta24-linux-fan-controller/blob/main/FAN_CONTROL.md
 - The exact match between our statically decoded 0x322400 branch target and that public report's helper VA strongly corroborates the ACPI _DSM evaluation role. Since it is a different machine/build and no helper body from the user's binary has yet been decoded, mark as strong corroboration rather than final proof.
 - Next inspect byte ranges around file offsets 0x3760, 0x390C, 0x3A7C, 0x3C4C and their preceding 0x40–0x60 bytes to identify helper prologues, call targets and API patterns. No driver call or hardware operation.
+
+
+## AcpiBridge helper prologues and argument patterns (2026-11-13)
+
+- User supplied helper-entry byte windows for exact AcpiBridge.sys:
+  - 0x3760 (IOCTL 0x322400): x64 prologue saves RBX/RSI/RBP/RDI/R12/R13/R14; establishes RBX=RCX, RDI=RDX, RSI=R8, initializes R14D=0. Uses device/context state checks and makes a call to an internal helper.
+  - 0x3A7C (IOCTL 0x322404): prologue establishes RBX=RCX, RSI=RDX; only two explicit arguments are copied into nonvolatile registers. Then performs global/device-context checks and an internal call. This signature is consistent with a wait-event registration handler that can retrieve its input buffer from the framework request, but the precise meaning remains unconfirmed until the body is decoded.
+  - 0x390C (IOCTL 0x322408): prologue establishes RSI=RCX, RBX=RDX, RDI=R8; checks context/global state then performs an internal call.
+  - 0x3C4C (IOCTL 0x32240C): prologue establishes RDI=RCX, RBX=RDX, R14=R8 and initializes R15D=0; checks context/global state then performs an internal call.
+- These function-entry patterns support the already mapped dispatch table and confirm that the 0x322404 branch supplies only two explicit arguments, while the other three supply a third pointer argument from the dispatch stack buffer.
+- Public related-project corroboration: HaseeCtl's AcpiBridge implementation names 0x322404 as IoctlWaitEvent and 0x322408 as IoctlGetNotifyValue, and its source documents 0x322400 as ACPI/WMI method evaluation and 0x32240C as app-store access. This is a separate Clevo implementation; it is useful corroboration, not a substitute for decoding the local helper bodies: https://github.com/SSRYLJRSS/HaseeCtl/blob/main/src/HaseeCtl.Core/Hw/AcpiBridge.cs and https://github.com/SSRYLJRSS/HaseeCtl/blob/main/docs/history/report_B_%E7%A1%AC%E4%BB%B6%E4%B8%8E%E5%8D%8F%E8%AE%AE%E9%AA%8C%E8%AF%81.md
+- Existing local imports ObReferenceObjectByHandle, ExEventObjectType, ObfDereferenceObject and KeSetEvent are consistent with the driver maintaining a referenced event object and signalling it. This makes the wait-event interpretation plausible, but exact call sites have not yet been mapped to those imports.
+- The shown helper excerpts are only partial (first 0x70-ish bytes), so no final claims are made about buffer lengths, pointer validation, WMI registration GUIDs, event ownership, app-store format or request completion semantics.
+- Next static step: extend the byte dump through the remainder of each helper:
+  - 0x3760 helper continuation: file offsets 0x37D0–0x390B
+  - 0x390C helper continuation: 0x397C–0x3A7B
+  - 0x3A7C helper continuation: 0x3AEC–0x3C4B
+  - 0x3C4C helper continuation: 0x3CBC–0x3D5B (adjust upward if this function has not returned yet)
+- All analysis remains static; no device handle has been opened and no IOCTL/WMI/ACPI/EC request has been made.
