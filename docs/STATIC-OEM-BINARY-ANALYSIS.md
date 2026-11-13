@@ -192,3 +192,21 @@ The 0x322400 internal method helper writes the exact standard Windows ACPI_EVAL_
 
 See Microsoft's ACPI_EVAL_INPUT_BUFFER_COMPLEX structure: https://learn.microsoft.com/en-us/windows-hardware/drivers/ddi/acpiioct/ns-acpiioct-_acpi_eval_input_buffer_complex_v1
 See the Windows SDK signature definition: https://github.com/tpn/winsdk-10/blob/master/Include/10.0.16299.0/shared/acpiioct.h
+
+
+### App Store request ABI cross-check (2026-11-13)
+
+The 0x32240C handler's local branch logic is independently corroborated by HaseeCtl's public AcpiBridge implementation:
+- Read: 12-byte input header, operation DWORD 0, offset=0 and length=0x1000 packed as DWORD 0x10000000 at byte offset 4, with a 0x1000-byte output buffer.
+- Write: operation DWORD 1, 16-bit offset at +4, 16-bit payload length at +6, and payload bytes beginning at +8.
+- The local handler validates the 4 KiB boundary; the write path checks the header+payload length and the read path checks/clamps the requested output span.
+This is a 4 KiB application-settings interface, not a CPU/GPU thermal telemetry method.
+
+Reference: https://github.com/SSRYLJRSS/HaseeCtl/blob/676161faeef390967d0a824ff0c6b060a15e74a2/src/HaseeCtl.Core/Hw/AcpiBridge.cs
+
+### Standard Windows ACPI input structure
+
+The helper writes the exact ACPI_EVAL_INPUT_BUFFER_COMPLEX_SIGNATURE ('CieA') and constructs a first ACPI_METHOD_ARGUMENT as a 16-byte buffer, consistent with a UUID. The remaining revision/function/package arguments need completion of helper analysis.
+
+Microsoft documents the ACPI_EVAL_INPUT_BUFFER_COMPLEX field layout: https://learn.microsoft.com/en-us/windows-hardware/drivers/ddi/acpiioct/ns-acpiioct-_acpi_eval_input_buffer_complex_v1
+Windows SDK signature macro: https://github.com/tpn/winsdk-10/blob/master/Include/10.0.16299.0/shared/acpiioct.h
