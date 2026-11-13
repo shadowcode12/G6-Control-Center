@@ -175,3 +175,20 @@ The app checks only whether the CLV0001 device-interface path is published. It d
 ### Buffer-direction correction (2026-11-13)
 
 The prior sentence in this document incorrectly labelled the 0x322400 DeviceIoControl buffers as input 0x40C / output 0x420. Static inspection of the exact CLV0001 AcpiBridge.sys shows WdfRequestRetrieveInputBuffer minimum 0x420 and WdfRequestRetrieveOutputBuffer minimum 0x14. A separate implementation of this same protocol explicitly allocates EvalInputSize=0x420 and EvalOutputSize=0x40C. Therefore the best-supported direction is **input 0x420, output 0x40C**. The earlier labels were transposed. Re-check the exact DLL callsite if that binary is available again before treating its call arguments as independently verified.
+
+
+### Verified App Store operation layout (2026-11-13)
+
+Static analysis of the exact installed AcpiBridge.sys handler for IOCTL 0x32240C indicates:
+- A 4 KiB backing store (maximum extent 0x1000).
+- 12-byte minimum input buffer and 4-byte minimum output buffer.
+- DWORD operation selector 0 = read/copy out; selector 1 = write/copy in; other values rejected with 0xC0000030.
+- Two 16-bit request fields at offsets +4 and +6 represent transfer offset and length; read validates output capacity and clamps to the backing-store boundary, while write validates offset+length and requires input size for an 8-byte header plus payload.
+- This is a separate app-settings IOCTL and does not itself expose thermal/fan telemetry.
+
+### ACPI input structure signature
+
+The 0x322400 internal method helper writes the exact standard Windows ACPI_EVAL_INPUT_BUFFER_COMPLEX_SIGNATURE ('CieA', DWORD 0x43696541) before populating the ACPI complex input structure. It writes the caller's method selector into the MethodNameAsUlong field and constructs a first ACPI_METHOD_ARGUMENT with Type=2 (BUFFER) and DataLength=16, consistent with a UUID argument. Subsequent argument fields are populated from the supplied _DSM request, but the full nested package/buffer layout still awaits the remainder of the helper body (0x3500–0x3760).
+
+See Microsoft's ACPI_EVAL_INPUT_BUFFER_COMPLEX structure: https://learn.microsoft.com/en-us/windows-hardware/drivers/ddi/acpiioct/ns-acpiioct-_acpi_eval_input_buffer_complex_v1
+See the Windows SDK signature definition: https://github.com/tpn/winsdk-10/blob/master/Include/10.0.16299.0/shared/acpiioct.h
