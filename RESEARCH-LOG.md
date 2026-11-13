@@ -228,7 +228,7 @@ User-provided byte ranges now extend the four helper bodies. WDF function table 
 
 ### 0x322400: standard ACPI complex method input structure
 
-- In the internal helper bytes at file offset 0x33BA, the driver writes immediate bytes 41 65 69 43, i.e. little-endian DWORD 0x43696541. Windows SDK defines ACPI_EVAL_INPUT_BUFFER_COMPLEX_SIGNATURE as the multi-character constant 'CieA'; this is an exact match.
+- In the internal helper bytes at file offset 0x33B9, the driver writes immediate bytes 41 65 69 43, i.e. little-endian DWORD 0x43696541. Windows SDK defines ACPI_EVAL_INPUT_BUFFER_COMPLEX_SIGNATURE as the multi-character constant 'CieA'; this is an exact match.
 - This is strong confirmation that the internal routine builds a standard ACPI_EVAL_INPUT_BUFFER_COMPLEX structure, not merely a proprietary lookalike. Microsoft documents this structure as Signature, MethodName/MethodNameAsUlong, Size, ArgumentCount, followed by a variable-length array of ACPI_METHOD_ARGUMENT objects (up to seven top-level arguments).
 - At file offset 0x33D1, the code copies a DWORD from the supplied method request at [rsi+0x14] into the structure's MethodNameAsUlong field at offset +4. This aligns with the caller-provided method selector, expected to encode _DSM in the already-observed Insyde DLL request.
 - At offset 0x343F, the local ACPI_METHOD_ARGUMENT at buffer offset +0x10 begins with DWORD 0x00100002: Type=2 (ACPI_METHOD_ARGUMENT_BUFFER), DataLength=16. This is consistent with the first _DSM argument being a 16-byte UUID buffer. The following bytes are populated by a copy helper from the caller-supplied input.
@@ -265,3 +265,35 @@ User-provided byte ranges now extend the four helper bodies. WDF function table 
   - Reference implementation: https://github.com/SSRYLJRSS/HaseeCtl/blob/676161faeef390967d0a824ff0c6b060a15e74a2/src/HaseeCtl.Core/Hw/AcpiBridge.cs and its hardware report: https://github.com/SSRYLJRSS/HaseeCtl/blob/676161faeef390967d0a824ff0c6b060a15e74a2/docs/history/report_B_%E7%A1%AC%E4%BB%B6%E4%B8%8E%E5%8D%8F%E8%AE%AE%E9%AA%8C%E8%AF%81.md
 - This app-settings mechanism is not a sensor telemetry API. It holds application settings, including possible Control Center preferences, and should not be used as a CPU temperature/fan RPM reader.
 - Next static task remains 0x322400 inner helper bytes 0x3500–0x3760; the App Store handler is complete enough for its operation format and bounds.
+
+
+## Completion of local ACPI _DSM transport path (2026-11-13)
+
+### Exact transition from private bridge IOCTL to Windows ACPI evaluation
+
+- The user's supplied bytes show instruction at file offset 0x3587: \`41 B9 04 C0 32 00\`, loading R9D with control code 0x0032C004.
+- 0x0032C004 is the Windows \`IOCTL_ACPI_EVAL_METHOD\` value (FILE_DEVICE_ACPI, function 1, METHOD_BUFFERED, read/write access), not the vendor-private user-mode \`0x322400\` code.
+- Therefore the data path is now statically established as: user-mode private IOCTL 0x322400 -> AcpiBridge.sys -> construct ACPI_EVAL_INPUT_BUFFER_COMPLEX -> synchronously send IOCTL_ACPI_EVAL_METHOD (0x0032C004) to the ACPI I/O target -> validate and parse ACPI_EVAL_OUTPUT_BUFFER.
+- Microsoft documents IOCTL_ACPI_EVAL_METHOD as a synchronous request for an ACPI control method and documents ACPI_EVAL_INPUT_BUFFER_COMPLEX as the input structure containing method name and ACPI_METHOD_ARGUMENT array: https://learn.microsoft.com/en-us/windows-hardware/drivers/acpi/evaluating-acpi-control-methods-synchronously and https://learn.microsoft.com/en-us/windows-hardware/drivers/ddi/acpiioct/ns-acpiioct-_acpi_eval_input_buffer_complex_v1. The numeric IOCTL value is also defined as 0x0032C004 in the acpiioct.h-derived reference: https://ntdoc.m417z.com/ioctl_acpi_eval_method
+- At file offset 0x3679, the helper compares the returned output buffer's first DWORD with 0x426F6541. In little-endian memory the signature bytes are \`41 65 6F 42\` ("AeoB"), matching \`ACPI_EVAL_OUTPUT_BUFFER_SIGNATURE\` ('BoeA'). This is a concrete signature validation before response parsing. Microsoft describes the ACPI_EVAL_OUTPUT_BUFFER header as Signature, Length, Count, followed by ACPI_METHOD_ARGUMENT entries: https://learn.microsoft.com/en-us/windows-hardware/drivers/ddi/acpiioct/ns-acpiioct-_acpi_eval_output_buffer_v1
+- The internal ACPI input structure writes \`ACPI_EVAL_INPUT_BUFFER_COMPLEX_SIGNATURE\` bytes \`41 65 69 43\` at file offset 0x33B9 (DWORD 0x43696541, macro 'CieA'). This offset supersedes the earlier tentative 0x33BA note.
+- It sets ArgumentCount=4 and places the supplied method name in MethodNameAsUlong. The observed method-name input is \`_DSM\`.
+- The four ACPI method arguments constructed by the helper are:
+  1. Type BUFFER (2), DataLength 16: the 16-byte DCHU _DSM UUID.
+  2. Type INTEGER (0), DataLength 4: the caller-supplied revision value from the request.
+  3. Type INTEGER (0), DataLength 4: the caller-supplied _DSM function/command index.
+  4. Type PACKAGE_EX (4): DataLength copied from the request; its contents include the nested ACPI_METHOD_ARGUMENT descriptor and data buffer passed to the _DSM.
+- The request's nested payload header is consistent with \`Type=BUFFER (2), DataLength=0x100 (256)\`, encoded as DWORD 0x01000002, followed by the 256-byte payload. The enclosing package argument length is 0x104 (260) bytes in the common full-size request. The computed ACPI argument-array Size is this package length plus the fixed preceding/header overhead (0x28), for 0x12C bytes when the package payload is 0x104.
+- Standard ACPI_METHOD_ARGUMENT Type values are confirmed by acpiioct.h: INTEGER=0, STRING=1, BUFFER=2, PACKAGE=3, PACKAGE_EX=4. Microsoft documentation describes the argument types and DataLength field: https://learn.microsoft.com/en-us/windows-hardware/drivers/ddi/acpiioct/ns-acpiioct-_acpi_method_argument_v1 and Windows SDK-derived header: https://github.com/tpn/winsdk-10/blob/master/Include/10.0.16299.0/shared/acpiioct.h
+- The helper creates a standard Windows ACPI method argument tree; it does not directly issue raw EC port/register accesses from user mode. Firmware/AML may perform embedded-controller operations after ACPI evaluates the requested _DSM function.
+
+### Remaining uncertainty: outer private IOCTL buffer directions
+
+- Keep outer DeviceIoControl input/output size labels provisional. The internal ACPI evaluator's own ACPI_EVAL_INPUT_BUFFER_COMPLEX / ACPI_EVAL_OUTPUT_BUFFER sizes must not be conflated with the outer private IOCTL 0x322400's WDF request input/output sizes.
+- The user's provided dispatch/helper excerpts omit file offsets 0x37D0–0x38EB from the outer 0x322400 wrapper function. Inspect that gap to confirm the local wrapper's exact WdfRequestRetrieveInputBuffer/WdfRequestRetrieveOutputBuffer calls and minimum lengths.
+- An independent same-family implementation uses outer DeviceIoControl input 0x420/output 0x40C, but exact directions in this G6 KF binary remain pending until the omitted wrapper body is examined.
+
+### Next static step
+
+- Dump file offsets 0x37D0–0x390B (outer private IOCTL 0x322400 handler continuation). No more bytes from the 0x3200–0x375F ACPI evaluator are needed to establish the underlying IOCTL_ACPI_EVAL_METHOD path and four _DSM argument types.
+- No device handle was opened and no IOCTL/WMI/ACPI/EC request was performed.
