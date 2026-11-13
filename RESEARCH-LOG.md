@@ -197,7 +197,7 @@ User-provided byte ranges now extend the four helper bodies. WDF function table 
 
 ### IOCTL 0x32240C / helper VA 0x140006A4C
 - The partial body uses WDF slot +0x870 (output buffer) with minimum length 4 and slot +0x868 (input buffer) with minimum length 12. This is consistent with the app-settings storage protocol seen in other Clevo implementations, but the remainder of this helper must be inspected before declaring its read/write semantics or supported buffer sizes.
-- The user supplied bytes end at 0x3D5B, before this handler's completion path. Continue dumping from file offset 0x3D50 through approximately 0x3E80.
+- The initial excerpt stopped at 0x3D5B. Subsequent user dumps completed the function through its return at approximately 0x3FF5; see the later App Store operation-branch analysis for read/write inference.
 
 ### WDF evidence sources
 - Public WDF API table mapping identifies +0x868 as WdfRequestRetrieveInputBuffer and +0x870 as WdfRequestRetrieveOutputBuffer: https://github.com/TakahiroHaruyama/VDR/blob/main/ida_ioctl_propagate.py
@@ -222,3 +222,31 @@ User-provided byte ranges now extend the four helper bodies. WDF function table 
 - Next static dump should cover 0x32A0–0x3760 (or chunks 0x32A0–0x3400, 0x3400–0x3600, 0x3600–0x3760), plus 0x3E80–0x4050 for the rest of the app-store helper.
 - Re-checked GitHub Actions: run 43468867205 for commit 212800a44ca7f7639a6e6284a885231895f33922 completed with conclusion success.
 - No device open, IOCTL, WMI method, ACPI _DSM request or EC access has been performed.
+
+
+## ACPI complex-input construction and App Store operation decoding (2026-11-13)
+
+### 0x322400: standard ACPI complex method input structure
+
+- In the internal helper bytes at file offset 0x33B5, the driver writes immediate bytes 41 65 69 43, i.e. little-endian DWORD 0x43696541. Windows SDK defines ACPI_EVAL_INPUT_BUFFER_COMPLEX_SIGNATURE as the multi-character constant 'CieA'; this is an exact match.
+- This is strong confirmation that the internal routine builds a standard ACPI_EVAL_INPUT_BUFFER_COMPLEX structure, not merely a proprietary lookalike. Microsoft documents this structure as Signature, MethodName/MethodNameAsUlong, Size, ArgumentCount, followed by a variable-length array of ACPI_METHOD_ARGUMENT objects (up to seven top-level arguments).
+- At file offset 0x33D1, the code copies a DWORD from the supplied method request at [rsi+0x14] into the structure's MethodNameAsUlong field at offset +4. This aligns with the caller-provided method selector, expected to encode _DSM in the already-observed Insyde DLL request.
+- At offset 0x343F, the local ACPI_METHOD_ARGUMENT at buffer offset +0x10 begins with DWORD 0x00100002: Type=2 (ACPI_METHOD_ARGUMENT_BUFFER), DataLength=16. This is consistent with the first _DSM argument being a 16-byte UUID buffer. The following bytes are populated by a copy helper from the caller-supplied input.
+- The code then writes further argument headers/data using input fields at [rsi+0x10], [rsi+0x18], [rsi+0x1C] and [rsi+0x1E]. These are consistent with subsequent _DSM revision, function index, and package/buffer argument data, but the full nested package argument layout and argument count have not yet been completely verified.
+- Internal helper also contains request-size and argument-length validation and builds a variable-size ACPI input buffer. Its full remaining body from 0x3500 through 0x3760 is still needed to map the final argument packing, ACPI send call, output conversion and error paths.
+- Microsoft's ACPI docs define ACPI_EVAL_INPUT_BUFFER_COMPLEX and its fields: https://learn.microsoft.com/en-us/windows-hardware/drivers/ddi/acpiioct/ns-acpiioct-_acpi_eval_input_buffer_complex_v1. The Windows SDK header uses the exact 'CieA' signature constant: https://github.com/tpn/winsdk-10/blob/master/Include/10.0.16299.0/shared/acpiioct.h
+
+### 0x32240C: App Store read/write operation branches
+
+- The handler body through file offset 0x3FF5 is now present in the supplied dumps; the code after that is a separate function, not part of the App Store handler.
+- The handler uses a 0x1000-byte (4096-byte) maximum store size.
+- At 0x3E65 it loads a DWORD operation selector from the request's input structure. Selector 0 branches to the read/copy-out path; selector 1 branches to the write/copy-in path. Other selector values are rejected with status constant 0xC0000030.
+- The input structure uses two 16-bit fields at offsets +4 and +6, interpreted by the branch logic as transfer offset and length. The read path checks requested offset/length against the store boundary and available output size, and clamps the transfer length to the remaining store bytes when necessary. The write path validates offset+length against 0x1000 and checks that the input buffer includes its 8-byte header plus the requested payload.
+- The write path copies data following the 8-byte request header into the backing settings store; the read path copies from the backing store into the output buffer and records a byte count/result. Exact backing-store object's lifecycle and the precise internal vtable methods still need cross-referencing, but the read/write operation distinction and bounds are strongly supported by the control flow.
+- The driver-side WDF minimums remain input length >=12 and output length >=4. This is a generic IOCTL wrapper for a 4 KiB app-settings store; it is separate from ACPI _DSM command IOCTL 0x322400.
+- No DeviceIoControl, WMI, ACPI _DSM or EC request has been performed.
+
+### Next static step
+
+- Dump the remaining 0x322400 inner helper bytes at offsets 0x3500–0x3760, ideally 0x3500–0x3600 and 0x3600–0x3760.
+- No additional App Store helper bytes are needed to establish its two operation branches; only deeper cross-reference of the backing-store context is optional.
