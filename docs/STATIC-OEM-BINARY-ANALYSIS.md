@@ -153,7 +153,7 @@ Run tools/Test-InsydeBridgeDiscovery.ps1. It calls only Windows Configuration Ma
 - The actually-loaded FnKey-root InsydeDCHU.dll (SHA-256 75A47020D3A9D052E94DCB4E3AD61FB69F20177DD46E20C9A20883D92B83981B) exports GetDCHU_Data_Integer at RVA 0x2680 and GetDCHU_Data_Buffer at RVA 0x2D50.
 - A shared helper enumerates the CLV0001 interface GUID and opens the device with CreateFileW. Static code supplies desired access 0xC0000000 (read/write) and share mode 3.
 - Both getters construct an ACPI _DSM request with UUID 93f224e4-fbdc-4bbf-add6-db71bdc0afad, the caller-supplied command integer and package argument data.
-- Both call DeviceIoControl with private control code 0x322400, input length 0x40C and output length 0x420.
+- Both call DeviceIoControl with private control code 0x322400. The driver handler's minimum buffer requirements and an independent matching implementation indicate input length 0x420 and output length 0x40C; an earlier local note had these directions reversed and is corrected here.
 - GetDCHU_Data_Buffer parses returned ACPI package buffer elements and copies bytes to the caller's output buffer. Its command ID is supplied by the caller; the export does not hard-code command 12.
 - This is static evidence, not a runtime test. The getter uses a read/write handle and sends a firmware ACPI request; do not invoke until the exact command and G6 KF firmware side effects are approved.
 
@@ -171,3 +171,7 @@ Run tools/Test-InsydeBridgeDiscovery.ps1. It calls only Windows Configuration Ma
 ### Current safe boundary
 
 The app checks only whether the CLV0001 device-interface path is published. It does not call CreateFileW, DeviceIoControl, GetDCHU_Data_Buffer, GetDCHU_Data_Integer, ACPI _DSM or any fan setter.
+
+### Buffer-direction correction (2026-11-13)
+
+The prior sentence in this document incorrectly labelled the 0x322400 DeviceIoControl buffers as input 0x40C / output 0x420. Static inspection of the exact CLV0001 AcpiBridge.sys shows WdfRequestRetrieveInputBuffer minimum 0x420 and WdfRequestRetrieveOutputBuffer minimum 0x14. A separate implementation of this same protocol explicitly allocates EvalInputSize=0x420 and EvalOutputSize=0x40C. Therefore the best-supported direction is **input 0x420, output 0x40C**. The earlier labels were transposed. Re-check the exact DLL callsite if that binary is available again before treating its call arguments as independently verified.
