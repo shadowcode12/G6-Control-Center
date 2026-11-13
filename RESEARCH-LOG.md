@@ -228,7 +228,7 @@ User-provided byte ranges now extend the four helper bodies. WDF function table 
 
 ### 0x322400: standard ACPI complex method input structure
 
-- In the internal helper bytes at file offset 0x33B5, the driver writes immediate bytes 41 65 69 43, i.e. little-endian DWORD 0x43696541. Windows SDK defines ACPI_EVAL_INPUT_BUFFER_COMPLEX_SIGNATURE as the multi-character constant 'CieA'; this is an exact match.
+- In the internal helper bytes at file offset 0x33BA, the driver writes immediate bytes 41 65 69 43, i.e. little-endian DWORD 0x43696541. Windows SDK defines ACPI_EVAL_INPUT_BUFFER_COMPLEX_SIGNATURE as the multi-character constant 'CieA'; this is an exact match.
 - This is strong confirmation that the internal routine builds a standard ACPI_EVAL_INPUT_BUFFER_COMPLEX structure, not merely a proprietary lookalike. Microsoft documents this structure as Signature, MethodName/MethodNameAsUlong, Size, ArgumentCount, followed by a variable-length array of ACPI_METHOD_ARGUMENT objects (up to seven top-level arguments).
 - At file offset 0x33D1, the code copies a DWORD from the supplied method request at [rsi+0x14] into the structure's MethodNameAsUlong field at offset +4. This aligns with the caller-provided method selector, expected to encode _DSM in the already-observed Insyde DLL request.
 - At offset 0x343F, the local ACPI_METHOD_ARGUMENT at buffer offset +0x10 begins with DWORD 0x00100002: Type=2 (ACPI_METHOD_ARGUMENT_BUFFER), DataLength=16. This is consistent with the first _DSM argument being a 16-byte UUID buffer. The following bytes are populated by a copy helper from the caller-supplied input.
