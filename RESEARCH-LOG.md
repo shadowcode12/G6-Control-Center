@@ -127,3 +127,17 @@ Understand the installed GIGABYTE/CLEVO application architecture on the owner's 
 - If EBX is the incoming IoControlCode (which must be confirmed by decoding the caller/context), this dispatch recognizes four consecutive codes: 0x322400 -> 0x4B41; 0x322404 -> 0x4B34; 0x322408 -> 0x4B22; 0x32240C -> 0x4B10. The subtraction pattern explains why a contiguous byte scan did not find literal 0x322404/408/40C constants.
 - This is strong static evidence for a four-way private-control dispatch, but the snippet alone does not identify the work performed by each handler or independently prove the EBX source. No IOCTL was invoked.
 - Next static task: inspect raw bytes and disassemble the four branch target ranges, especially file offsets 0x4B10, 0x4B22, 0x4B34, 0x4B41 and common/default exit around 0x4B54. Confirm the function argument/register setup leading into the EBX comparison before assigning final IOCTL semantics.
+
+
+## AcpiBridge IOCTL branch-to-helper mapping (2026-11-13)
+
+- User supplied raw bytes around file offsets 0x4B10–0x4BC0. Relative CALL targets were resolved using x64 rel32 arithmetic:
+  - IOCTL 0x322400 takes JZ at 0x4AF7 to dispatcher branch 0x4B41. CALL at 0x4B4C has next RIP 0x4B51 and displacement 0xFFFFEC0F (-0x13F1), resolving to helper file offset 0x3760.
+  - IOCTL 0x322404 takes JZ at 0x4AFC to branch 0x4B34. CALL at 0x4B3A has next RIP 0x4B3F and displacement 0xFFFFEF3D (-0x10C3), resolving to helper file offset 0x3A7C.
+  - IOCTL 0x322408 takes JZ at 0x4B01 to branch 0x4B22. CALL at 0x4B2D has next RIP 0x4B32 and displacement 0xFFFFEDDA (-0x1226), resolving to helper file offset 0x390C.
+  - IOCTL 0x32240C takes JZ at 0x4B06 to branch 0x4B10. CALL at 0x4B1B has next RIP 0x4B20 and displacement 0xFFFFF12C (-0xED4), resolving to helper file offset 0x3C4C.
+- Each branch passes R8 = pointer to stack buffer at [rsp+0x50], RDX = RDI, RCX = RSI into its helper. The two event-related handlers therefore do not obviously have identical argument setup: 0x322404 branch passes R8/RDX/RCX via the same pattern without the explicit LEA of R8, whereas 0x322408 and the other two include LEA R8,[rsp+0x50]. Confirm exact stack/register semantics from caller and helper prologues before interpreting.
+- All branches rejoin at common completion code offset 0x4B51. It moves EAX to R8D, restores WDF/request context, and reaches an indirect call; likely a WDF completion path but exact API symbol/target is not identified yet.
+- Default unmatched IOCTL path loads 0xC0000010 (STATUS_INVALID_DEVICE_REQUEST) into R8D before joining common completion path.
+- These offsets are static analysis of the exact local AcpiBridge.sys binary with SHA256 BE879AF2EF1BEAA3AD041C30ABD103C5E9E872D23EA8442B57682BB0D06EA153. No IOCTL has been sent and no device has been opened.
+- Next static check: dump helper entry ranges and map file offsets to RVAs using PAGE section raw pointer 0x3200 and virtual address 0x6000. Relevant helper file offsets: 0x3760, 0x390C, 0x3A7C, 0x3C4C. Also inspect caller setup before 0x4AD0 and common epilogue around 0x4B51–0x4B88.
