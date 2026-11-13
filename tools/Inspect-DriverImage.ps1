@@ -150,5 +150,80 @@ while ($i -lt $script:Bytes.Length -and $found -lt 200) {
     } else { $i++ }
 }
 
+
+
+Write-Output '=== PE debug / CodeView metadata ==='
+$debugDirEntry = $opt + $dir + (6 * 8)
+$debugRva = U32 $debugDirEntry
+$debugSize = U32 ($debugDirEntry + 4)
+if ($debugRva -ne 0 -and $debugSize -ge 28) {
+    $debugOffset = RvaOffset $debugRva
+    if ($debugOffset -ge 0) {
+        $debugCount = [Math]::Min([int]($debugSize / 28), 64)
+        for ($n = 0; $n -lt $debugCount; $n++) {
+            $d = $debugOffset + (28 * $n)
+            $type = U32 ($d + 12)
+            $dataSize = U32 ($d + 16)
+            $rawData = U32 ($d + 24)
+            if ($type -eq 2 -and $dataSize -ge 24 -and $rawData -ge 0 -and ($rawData + $dataSize) -le $script:Bytes.Length) {
+                $sig = [Text.Encoding]::ASCII.GetString($script:Bytes, [int]$rawData, 4)
+                if ($sig -eq 'RSDS') {
+                    $guidBytes = New-Object byte[] 16
+                    [Array]::Copy($script:Bytes, [int]($rawData + 4), $guidBytes, 0, 16)
+                    $cvGuid = [Guid]::new($guidBytes)
+                    $age = U32 ([int]($rawData + 20))
+                    $pdb = AsciiZ ([int]($rawData + 24))
+                    [pscustomobject]@{ Signature=$sig; Guid=$cvGuid; Age=$age; PdbPath=$pdb } | Format-List | Out-String | Write-Output
+                }
+            }
+        }
+    }
+} else {
+    Write-Output '(No PE debug directory advertised.)'
+}
+
+Write-Output '=== Embedded UTF-16LE strings of interest ==='
+$unicodePattern = '(?i)(acpi|dchu|deviceiocontrol|ioctl|wdf|wmi|firmware|bios|insyde|clevo|clv0001|clv0002|fan|temp|thermal|\\\\device|irp_mj|controlcode|ec|\\\\.pdb)'
+$unicodeCount = 0
+$i = 0
+while ($i -lt ($script:Bytes.Length - 1) -and $unicodeCount -lt 200) {
+    if ($script:Bytes[$i] -ge 0x20 -and $script:Bytes[$i] -le 0x7E -and $script:Bytes[$i + 1] -eq 0) {
+        $start = $i
+        $j = $i
+        while (($j + 1) -lt $script:Bytes.Length -and $script:Bytes[$j] -ge 0x20 -and $script:Bytes[$j] -le 0x7E -and $script:Bytes[$j + 1] -eq 0) { $j += 2 }
+        $length = [int](($j - $start) / 2)
+        if ($length -ge 5) {
+            $value = [Text.Encoding]::Unicode.GetString($script:Bytes, $start, $j - $start)
+            if ($value -match $unicodePattern) {
+                Write-Output ('UTF16: ' + $value)
+                $unicodeCount++
+            }
+        }
+        $i = $j + 2
+    } else { $i += 2 }
+}
+
+Write-Output '=== Binary fingerprints ==='
+$fingerprints = [ordered]@{
+    'CLV0001 device interface GUID (in-memory GUID byte order)' = [byte[]](0x74,0x4C,0x99,0x86,0x43,0xAD,0x12,0x48,0xB7,0xE7,0x0C,0x42,0x0B,0x5C,0x5F,0xD7)
+    'ACPI _DSM UUID (in-memory GUID byte order)' = [byte[]](0xE4,0xF2,0x24,0x93,0xDC,0xFB,0xDC,0x4B,0xAD,0xD6,0xDB,0x71,0xBD,0xC0,0xAF,0xAD)
+    'candidate IOCTL 0x322400' = [byte[]](0x00,0x24,0x32,0x00)
+    'candidate IOCTL 0x322404' = [byte[]](0x04,0x24,0x32,0x00)
+    'candidate IOCTL 0x322408' = [byte[]](0x08,0x24,0x32,0x00)
+    'candidate IOCTL 0x32240C' = [byte[]](0x0C,0x24,0x32,0x00)
+}
+foreach ($item in $fingerprints.GetEnumerator()) {
+    $hits = [System.Collections.Generic.List[string]]::new()
+    $needle = [byte[]]$item.Value
+    for ($pos = 0; $pos -le ($script:Bytes.Length - $needle.Length); $pos++) {
+        $match = $true
+        for ($k = 0; $k -lt $needle.Length; $k++) {
+            if ($script:Bytes[$pos + $k] -ne $needle[$k]) { $match = $false; break }
+        }
+        if ($match) { $hits.Add(('0x{0:X}' -f $pos)) }
+    }
+    Write-Output ('{0}: {1}' -f $item.Key, $(if ($hits.Count) { $hits -join ', ' } else { 'not found as a contiguous byte sequence' }))
+}
+
 Write-Output ''
 Write-Output 'Static file inspection only. No device handle, IOCTL, WMI method, ACPI _DSM request, or EC access is performed.'
