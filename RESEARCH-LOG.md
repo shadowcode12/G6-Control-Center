@@ -57,3 +57,15 @@ Understand the installed GIGABYTE/CLEVO application architecture on the owner's 
 - GetCurrentCpuSpeed.dll exports GetBaseSpeed, GetCpuSpeed and GetProcessorPerformance, and imports PDH query/counter APIs. Its embedded strings identify the Processor Information % Processor Performance counter and Win32_Processor MaxClockSpeed WMI property. This confirms a Windows PDH/WMI frequency path separate from DCHU.
 - InsydeDCHU.dll exports GetDCHU_Data_Integer/GetDCHU_Data_Buffer and setters. Static disassembly of GetDCHU_Data_Integer shows an ACPI _DSM request passed through DeviceIoControl (control code 0x322400). Do not invoke until exact G6 KF arguments and side effects are validated.
 - The actually loaded FnKey-root InsydeDCHU.dll is a third distinct hash; it must not be assumed byte-identical to the CC40 or DCHU-subfolder copies.
+
+
+## Driver-package analysis (2026-11-13)
+
+- oem30.inf identifies Insyde ACPI\\CLV0001 and registers device-interface GUID 86994c74-ad43-4812-b7e7-0c420b5c5fd7 with custom capability Clevo.BiosDchuDriver_6h6z29zh29qx0.
+- DCHUService.exe embeds the exact corresponding path \\?\\ACPI#CLV0001#1#{86994c74-ad43-4812-b7e7-0c420b5c5fd7}.
+- The supplied InsydeDCHU.dll variants import CM_Get_Device_Interface_List_SizeW, CM_Get_Device_Interface_ListW, CreateFileW, and DeviceIoControl. Together these point to the CLV0001 interface as the first path to validate.
+- oem70.inf installs CLV0002 and registers CCDCHUService as a Win32 own-process service (ServiceType=0x10) whose service binary is DCHUService.exe.
+- The supplied AcpiBridge1.sys is an x64 native KMDF binary with imports including IoWMIRegistrationControl; the exact telemetry contract it implements remains unproven.
+- DCHUService.exe contains a CLR header and static strings for both the CLV0001 device-interface path and the absent-on-this-machine CLEVO_GET WMI class, plus CPU/GPU temperature and fan getter/setter names. These strings do not prove that the WMI class or any given method is live/compatible.
+- The bundled AMDRyzenMasterDriver.inf targets Root\\AMDRMDRIVER and is included under an AMD package section; it is not appropriate to install/load for the owner's Intel i7-13620H.
+- Added tools/Test-InsydeBridgeDiscovery.ps1 to enumerate only the CLV0001 interface path via Configuration Manager. It does not open the device or issue IOCTL/ACPI/EC requests.

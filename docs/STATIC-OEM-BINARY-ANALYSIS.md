@@ -100,3 +100,46 @@ These are string-table observations, not proof that each method is registered or
 3. Treat CLV0001 (Insyde AcpiBridge) and CLV0002 (CLEVO DCHUService) as separate device interfaces.
 4. Do not invoke GetDCHU_Data_Integer, GetDCHU_Data_Buffer, any CLEVO_GET method, DeviceIoControl, ACPI _DSM, or fan setters during discovery.
 5. Obtain a full elevated module inventory with the OEM UI open before considering dynamic tracing. The current second inventory is not elevated and only captured FnKey.exe's loaded modules.
+
+
+## New findings from the supplied driver package (2026-11-13)
+
+### CLV0001 is the strongest device-interface lead
+
+The supplied INF_oem30.inf (Insyde, DriverVer 1.0.0.7) installs the ACPI\\CLV0001 device and registers this device-interface class GUID:
+
+    {86994c74-ad43-4812-b7e7-0c420b5c5fd7}
+
+The same INF associates a restricted custom device capability named Clevo.BiosDchuDriver_6h6z29zh29qx0 with that interface.
+
+The supplied DCHUService.exe contains the exact interface path string:
+
+    \\?\ACPI#CLV0001#1#{86994c74-ad43-4812-b7e7-0c420b5c5fd7}
+
+The supplied InsydeDCHU.dll variants import CM_Get_Device_Interface_List_SizeW, CM_Get_Device_Interface_ListW, CreateFileW, and DeviceIoControl. These three independent observations (INF interface registration, service path string, DLL imports) point to the CLV0001/Insyde interface as the first path to validate. This is a stronger machine-specific lead than the absent generic CLEVO_GET WMI class.
+
+### CLV0002 package is a separate component
+
+The supplied INF_oem70.inf / acpibridge1.inf installs ACPI\\CLV0002 and copies AcpiBridge1.sys, DCHUService.exe, InsydeDCHU.dll, and other package files. Its service-install section registers CCDCHUService with ServiceType=0x10 (Win32 own-process service) and ServiceBinary=%13%\\DCHUService.exe. The value 0x10 is not the kernel-driver service type.
+
+The supplied AcpiBridge1.sys is an x64 native Windows kernel binary built with KMDF. Its import table includes IoWMIRegistrationControl, MmGetSystemRoutineAddress, and WDF binding functions; it also has a local PDB path referencing AcpiBridge1\\x64\\Release. This establishes that the package contains a separate KMDF/WMI-related driver component, but does not by itself establish which fan/temperature data it exposes.
+
+### DCHUService evidence
+
+The supplied DCHUService.exe is an x64 Windows console-subsystem managed (.NET CLR-header) executable. Its static strings include:
+
+- DEVINTERFACE_ACPI_BRIDGE
+- the CLV0001 interface path above
+- DeviceIoControl1, DeviceIoControl2, GetDCHU_Data_Buffer, and GetDCHU_Data_Integer
+- root\\WMI, CLEVO_GET.InstanceName='ACPI\\PNP0C14\\0_0', and WMI helper strings
+- CPU/GPU temperature and fan method names, along with several setter names
+
+The live inventory still reports CLEVO_GET as an invalid class. Static strings are not proof that the WMI class is registered on this firmware. The CLV0001 interface path is therefore the better next discovery target, while the WMI route remains unconfirmed.
+
+### AMD driver files in the CLEVO package
+
+The supplied AMDRyzenMasterDriver.inf targets Root\\AMDRMDRIVER and is explicitly grouped under an AMD section in the CLEVO package INF. The owner's processor is Intel Core i7-13620H. These files are package contents for an AMD platform variant and are not a sensor driver to install or load on this Intel laptop.
+
+### Next safe test
+
+Run tools/Test-InsydeBridgeDiscovery.ps1. It calls only Windows Configuration Manager's interface-list APIs for the published CLV0001 GUID and prints any present interface paths. It does not open the device or issue any IOCTL/ACPI/EC requests. Paste the console output; no additional file upload is needed.

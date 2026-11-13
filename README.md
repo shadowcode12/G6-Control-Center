@@ -100,6 +100,15 @@ docs/
 
 The repository includes OEM communication-path research notes in docs/OEM-SENSOR-REVERSE-ENGINEERING.md. The notes distinguish evidence from the user's own CC40 package from candidate findings published for a different Clevo model. No vendor DLLs are committed, no WMI methods are invoked by the app, and no ACPI/EC writes are performed.
 
+### Check the CLV0001 device interface (no file upload required)
+
+Run this from PowerShell:
+
+```powershell
+powershell.exe -ExecutionPolicy Bypass -File .\\tools\\Test-InsydeBridgeDiscovery.ps1
+```
+
+It lists Windows-published paths for the Insyde interface GUID found in the installed oem30.inf. The script does not open the device or send IOCTLs. Paste the console output when reporting the result.
 ### Collect exact G6 KF OEM interface evidence
 
 Keep GIGABYTE Control Center open, then run PowerShell as Administrator for the fullest process-module inventory. From the repository root:
