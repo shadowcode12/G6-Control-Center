@@ -112,3 +112,18 @@ Understand the installed GIGABYTE/CLEVO application architecture on the owner's 
 - Public cross-check: https://github.com/x-hachiroku/colorful-p15-ta24-linux-fan-controller/blob/main/FAN_CONTROL.md records an AcpiBridge.sys dispatch routine for 0x322400 at VA 0x1400078F1 in another Clevo/Insyde build, and its DLL path constructs the same UUID/_DSM request. This is very close in address to this binary's candidate byte match (VA 0x1400078F3), but the public report is another laptop/build and the local CodeView GUID has not matched it. Do not claim the machine code is identical without examining bytes/disassembly.
 - Public cross-check: https://github.com/SSRYLJRSS/HaseeCtl/blob/main/src/HaseeCtl.Core/Hw/AcpiBridge.cs defines the same interface GUID and IOCTL 0x322400 as an ACPI/WMI method evaluation path, and additional IOCTLs 0x322404, 0x322408 and 0x32240C for event notification and app storage. This is implementation evidence from a different Clevo model/software project, not confirmed G6 KF behaviour. The local scan did not find the latter IOCTL byte sequences in AcpiBridge.sys; they may be encoded or handled differently, so do not infer absence from this scan.
 - Next static check is a small hex dump around file offset 0x4AF3 (approximately 0x4AD0–0x4B20) to identify instruction boundaries and confirm whether the immediate belongs to the PAGE dispatch routine. Do not invoke DeviceIoControl or issue hardware requests for this check.
+
+
+## AcpiBridge IOCTL dispatcher instruction decoding (2026-11-13)
+
+- User supplied a read-only hex dump of the exact installed AcpiBridge.sys around file offset 0x4AD0–0x4B20.
+- The candidate constant at file offset 0x4AF3 is part of the instruction beginning at 0x4AF1: bytes `81 EB 00 24 32 00`, x64 decode `sub ebx, 0x00322400`.
+- Following conditional branches and arithmetic are:
+  - 0x4AF7: `74 48` => JZ to file offset 0x4B41.
+  - 0x4AF9: `83 EB 04` => subtract 4 from EBX; 0x4AFC `74 36` => JZ to 0x4B34.
+  - 0x4AFE: `83 EB 04` => subtract 4 again; 0x4B01 `74 1F` => JZ to 0x4B22.
+  - 0x4B03: `83 FB 04` => compare EBX to 4; 0x4B06 `74 08` => JZ to 0x4B10.
+  - Default path at 0x4B08 loads R8D with 0xC0000010 (STATUS_INVALID_DEVICE_REQUEST) and jumps to common exit at 0x4B54.
+- If EBX is the incoming IoControlCode (which must be confirmed by decoding the caller/context), this dispatch recognizes four consecutive codes: 0x322400 -> 0x4B41; 0x322404 -> 0x4B34; 0x322408 -> 0x4B22; 0x32240C -> 0x4B10. The subtraction pattern explains why a contiguous byte scan did not find literal 0x322404/408/40C constants.
+- This is strong static evidence for a four-way private-control dispatch, but the snippet alone does not identify the work performed by each handler or independently prove the EBX source. No IOCTL was invoked.
+- Next static task: inspect raw bytes and disassemble the four branch target ranges, especially file offsets 0x4B10, 0x4B22, 0x4B34, 0x4B41 and common/default exit around 0x4B54. Confirm the function argument/register setup leading into the EBX comparison before assigning final IOCTL semantics.
