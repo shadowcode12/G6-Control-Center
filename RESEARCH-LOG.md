@@ -213,3 +213,12 @@ User-provided byte ranges now extend the four helper bodies. WDF function table 
 - The 0x322400 helper calls an internal routine at file offset approximately 0x3201, which begins a larger ACPI/WMI evaluation implementation. The supplied bytes show it uses shared device/global state, passes method-related fields and lengths into internal/WDF routines, and then returns through a status/response parsing path. The inner routine still needs further bytes before its exact ACPI argument construction and error paths can be fully mapped.
 - The 0x32240C app-store helper first retrieves an output buffer with minimum length 4 and input buffer with minimum length 12. It then branches based on the input flags/state and issues further internal calls. The supplied excerpt is incomplete at 0x3E80, so actual operation codes, read/write semantics and data bounds are not yet established.
 - Next static dump: AcpiBridge.sys file offsets 0x32A0-0x3760 (continuation of the internal 0x322400 ACPI/WMI evaluation helper) and 0x3E80-0x4050 (continuation of the 0x32240C app-store handler). Do not send any DeviceIoControl or firmware request.
+
+
+## Extended 0x322400 internal helper and 0x32240C app-store handler (2026-11-13)
+
+- The user extended the 0x322400 handler's internal helper dump only through file offset 0x32A0; the visible bytes show the helper continuing through shared/global state and an indirect function-table call. This range is too short to identify the full ACPI argument construction or WMI call semantics. Continue from 0x32A1 through the caller/helper return boundary, ideally in 0x100-byte increments.
+- The 0x32240C handler continuation shows a minimum 4-byte output buffer and 12-byte input buffer, then a conditional path and references to request/context vtable entries at offsets including +0x3B8, +0x758 and +0x738. At 0x3DB0 it sets a working length to 0x1000; at 0x3E60 it sets a state byte and begins branching on a 32-bit value from the retrieved input buffer. The supplied bytes stop at 0x3E80 before the operation branches complete. Do not yet label the operation values as read/write without the remaining branch bodies.
+- Next static dump should cover 0x32A0–0x3760 (or chunks 0x32A0–0x3400, 0x3400–0x3600, 0x3600–0x3760), plus 0x3E80–0x4050 for the rest of the app-store helper.
+- Re-checked GitHub Actions: run 43468867205 for commit 212800a44ca7f7639a6e6284a885231895f33922 completed with conclusion success.
+- No device open, IOCTL, WMI method, ACPI _DSM request or EC access has been performed.
