@@ -11,6 +11,7 @@ A Windows-first, independent control center for the GIGABYTE G6 KF. The active W
 - WPF application using an MVVM-style structure.
 - CPU utilization through Windows `GetSystemTimes`.
 - A labelled effective CPU-frequency estimate from the Windows Processor Information `% Processor Performance` PDH counter and CPUID nominal/base MHz; this is a derived value, not a direct per-core clock sensor.
+- CLV0001 Insyde bridge presence discovery through Windows Configuration Manager's device-interface list API. This confirms published-path discovery only; the app does not open the device or send IOCTL/ACPI/EC requests.
 - Physical memory through `GlobalMemoryStatusEx`.
 - System drive capacity and usage through `DriveInfo`.
 - System uptime through `Environment.TickCount64`.
@@ -126,3 +127,13 @@ It saves an evidence bundle at:
 ```
 
 Vendor binaries and driver files are copied to the local bundle for static analysis only. They are not committed to the public GitHub repository.
+
+### CLV0001 driver metadata (no binary upload required)
+
+Run this from PowerShell:
+
+```powershell
+powershell.exe -ExecutionPolicy Bypass -File .\tools\Get-Clv0001DriverInfo.ps1
+```
+
+It prints the CLV0001 service name, installed INF, resolved AcpiBridge.sys path, file version, SHA-256 and signature status. Paste the output; no ZIP or binary upload is needed. It does not open the device or send any hardware request.

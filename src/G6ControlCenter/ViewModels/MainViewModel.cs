@@ -11,6 +11,7 @@ public sealed class MainViewModel : ObservableObject, IDisposable
     private readonly SystemMetricsService _metrics = new();
     private readonly NvidiaSmiService _nvidia = new();
     private readonly CpuPerformanceClockService _cpuClock = new();
+    private readonly InsydeBridgeDiscoveryService _bridgeDiscovery = new();
     private readonly Dispatcher _dispatcher = Dispatcher.CurrentDispatcher;
     private readonly DispatcherTimer _timer;
     private CancellationTokenSource? _gpuPollingCts;
@@ -50,6 +51,8 @@ public sealed class MainViewModel : ObservableObject, IDisposable
     private string _fanSpeedValue = "Detecting…";
     private string _fanSpeedDetail = "Fan RPM is shown only when the controller exposes it.";
     private string _hardwareSensorStatus = "Starting hardware sensor discovery…";
+    private string _oemBridgeValue = "Checking…";
+    private string _oemBridgeDetail = "CLV0001 Insyde device interface";
 
     public MainViewModel()
     {
@@ -93,6 +96,8 @@ public sealed class MainViewModel : ObservableObject, IDisposable
     public string FanSpeedValue { get => _fanSpeedValue; private set => SetProperty(ref _fanSpeedValue, value); }
     public string FanSpeedDetail { get => _fanSpeedDetail; private set => SetProperty(ref _fanSpeedDetail, value); }
     public string HardwareSensorStatus { get => _hardwareSensorStatus; private set => SetProperty(ref _hardwareSensorStatus, value); }
+    public string OemBridgeValue { get => _oemBridgeValue; private set => SetProperty(ref _oemBridgeValue, value); }
+    public string OemBridgeDetail { get => _oemBridgeDetail; private set => SetProperty(ref _oemBridgeDetail, value); }
 
     public void Start()
     {
@@ -100,6 +105,10 @@ public sealed class MainViewModel : ObservableObject, IDisposable
 
         _isRunning = true;
         Refresh();
+
+        var bridge = _bridgeDiscovery.Read();
+        OemBridgeValue = bridge.IsPublished ? "Detected" : "Not detected";
+        OemBridgeDetail = bridge.Detail;
         _timer.Start();
 
         _gpuPollingCts = new CancellationTokenSource();

@@ -42,7 +42,7 @@
                     <Border Background="{StaticResource SurfaceBrush}" CornerRadius="12" Padding="13" Margin="0,0,0,12">
                         <StackPanel>
                             <TextBlock Text="DEVELOPMENT BUILD" FontSize="9" Foreground="{StaticResource MutedBrush}" />
-                            <TextBlock Text="v0.4.0 · CPU clock" FontSize="12" Margin="0,7,0,0" />
+                            <TextBlock Text="v0.5.0 · OEM bridge" FontSize="12" Margin="0,7,0,0" />
                             <TextBlock Text="Hardware writes disabled" FontSize="10" Foreground="{StaticResource AccentBrush}" Margin="0,5,0,0" />
                         </StackPanel>
                     </Border>
@@ -207,6 +207,11 @@
                             <TextBlock Text="HARDWARE CONTROL" FontSize="10" FontWeight="Bold" Foreground="{StaticResource MutedBrush}" />
                             <TextBlock Text="Controls are being mapped to your exact G6 hardware." FontSize="15" FontWeight="SemiBold" Margin="0,8,0,5" />
                             <TextBlock Text="Fan, thermal, EC and power-profile writes remain disabled until the device interface is verified." FontSize="11" Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" MaxWidth="650" />
+                            <StackPanel Orientation="Horizontal" Margin="0,12,0,0">
+                                <TextBlock Text="CLV0001 INSYDE BRIDGE" FontSize="10" FontWeight="Bold" Foreground="{StaticResource MutedBrush}" VerticalAlignment="Center" />
+                                <TextBlock Text="{Binding OemBridgeValue}" FontSize="11" FontWeight="Bold" Foreground="{StaticResource AccentBrush}" Margin="12,0,0,0" VerticalAlignment="Center" />
+                            </StackPanel>
+                            <TextBlock Text="{Binding OemBridgeDetail}" FontSize="10" Foreground="{StaticResource MutedBrush}" Margin="0,5,0,0" TextWrapping="Wrap" MaxWidth="650" />
                         </StackPanel>
                         <Border Grid.Column="1" Background="#27351F" CornerRadius="10" Padding="12,8" VerticalAlignment="Center" Margin="20,0,0,0">
                             <TextBlock Text="SAFE MODE" Foreground="{StaticResource AccentBrush}" FontSize="10" FontWeight="Bold" />

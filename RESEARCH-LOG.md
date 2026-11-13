@@ -69,3 +69,12 @@ Understand the installed GIGABYTE/CLEVO application architecture on the owner's 
 - DCHUService.exe contains a CLR header and static strings for both the CLV0001 device-interface path and the absent-on-this-machine CLEVO_GET WMI class, plus CPU/GPU temperature and fan getter/setter names. These strings do not prove that the WMI class or any given method is live/compatible.
 - The bundled AMDRyzenMasterDriver.inf targets Root\\AMDRMDRIVER and is included under an AMD package section; it is not appropriate to install/load for the owner's Intel i7-13620H.
 - Added tools/Test-InsydeBridgeDiscovery.ps1 to enumerate only the CLV0001 interface path via Configuration Manager. It does not open the device or issue IOCTL/ACPI/EC requests.
+## CLV0001 device-interface result and DLL disassembly (2026-11-13)
+
+- The user ran Test-InsydeBridgeDiscovery.ps1: ACPI\\CLV0001\\1 returned Status OK; Configuration Manager result 0; one published interface path was returned for GUID 86994c74-ad43-4812-b7e7-0c420b5c5fd7.
+- Local disassembly of the exact loaded FnKey-root InsydeDCHU.dll confirms that getters enumerate this GUID, then use CreateFileW with desired access 0xC0000000 (read/write) and share mode 3.
+- GetDCHU_Data_Integer and GetDCHU_Data_Buffer construct an ACPI _DSM request with UUID 93f224e4-fbdc-4bbf-add6-db71bdc0afad and call DeviceIoControl with private control code 0x322400, input length 0x40C and output length 0x420.
+- GetDCHU_Data_Buffer is generic: command ID is supplied by its caller. It parses ACPI package buffer values into a caller-provided output buffer.
+- oem30.inf installs CLV0001 using AcpiBridge.sys as a kernel driver. Uploaded AcpiBridge1.sys belongs to oem70.inf/CLV0002, not CLV0001.
+- A separate NH5xAx Clevo analysis documents command 12 as a live fan telemetry package that triggers EC command 0xC0. This is external, model-specific evidence, not yet confirmed for the G6 KF.
+- Added an in-app, non-invasive CLV0001 interface status card and tools/Get-Clv0001DriverInfo.ps1 for local driver metadata.

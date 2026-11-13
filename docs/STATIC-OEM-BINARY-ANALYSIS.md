@@ -143,3 +143,31 @@ The supplied AMDRyzenMasterDriver.inf targets Root\\AMDRMDRIVER and is explicitl
 ### Next safe test
 
 Run tools/Test-InsydeBridgeDiscovery.ps1. It calls only Windows Configuration Manager's interface-list APIs for the published CLV0001 GUID and prints any present interface paths. It does not open the device or issue any IOCTL/ACPI/EC requests. Paste the console output; no additional file upload is needed.
+## CLV0001 interface presence confirmed on the user's G6 KF (2026-11-13)
+
+- The user ran the Configuration Manager discovery tool: ACPI\\CLV0001\\1 returned Status OK; CONFIGRET 0; one published path was returned for GUID 86994c74-ad43-4812-b7e7-0c420b5c5fd7.
+- This confirms Windows publishes the Insyde bridge interface. It does not confirm that the app can open the device or that any IOCTL/ACPI request is safe.
+
+### Exact Insyde DLL control flow from local static disassembly
+
+- The actually-loaded FnKey-root InsydeDCHU.dll (SHA-256 75A47020D3A9D052E94DCB4E3AD61FB69F20177DD46E20C9A20883D92B83981B) exports GetDCHU_Data_Integer at RVA 0x2680 and GetDCHU_Data_Buffer at RVA 0x2D50.
+- A shared helper enumerates the CLV0001 interface GUID and opens the device with CreateFileW. Static code supplies desired access 0xC0000000 (read/write) and share mode 3.
+- Both getters construct an ACPI _DSM request with UUID 93f224e4-fbdc-4bbf-add6-db71bdc0afad, the caller-supplied command integer and package argument data.
+- Both call DeviceIoControl with private control code 0x322400, input length 0x40C and output length 0x420.
+- GetDCHU_Data_Buffer parses returned ACPI package buffer elements and copies bytes to the caller's output buffer. Its command ID is supplied by the caller; the export does not hard-code command 12.
+- This is static evidence, not a runtime test. The getter uses a read/write handle and sends a firmware ACPI request; do not invoke until the exact command and G6 KF firmware side effects are approved.
+
+### Distinguish the two bridge drivers
+
+- oem30.inf installs ACPI\\CLV0001 and references AcpiBridge.sys as a kernel driver (ServiceType=1, demand start). This is the CLV0001 driver whose interface is now confirmed published.
+- Uploaded DriverStore_AcpiBridge1.sys belongs to the separate oem70.inf package for ACPI\\CLV0002; it is not the CLV0001 AcpiBridge.sys binary.
+- The installed CLV0001 AcpiBridge.sys path/hash/version/signature have not yet been captured. tools/Get-Clv0001DriverInfo.ps1 prints those fields locally so the user can paste output without uploading a binary.
+
+### External comparison — different Clevo model
+
+- Separate NH5xAx Clevo reverse-engineering notes document the same CLV0001 interface GUID and a fan telemetry call GetDCHU_Data_Buffer(12). The report says package 12 invokes an ACPI _DSM path that issues EC command 0xC0 and returns a 256-byte telemetry buffer.
+- This is a useful candidate mapping but was validated on another Clevo model; it is not yet confirmed on the G6 KF. Source: https://github.com/samoylenkodmitry/clevo-thermald/blob/main/docs/REVERSE-ENGINEERING.md
+
+### Current safe boundary
+
+The app checks only whether the CLV0001 device-interface path is published. It does not call CreateFileW, DeviceIoControl, GetDCHU_Data_Buffer, GetDCHU_Data_Integer, ACPI _DSM or any fan setter.
